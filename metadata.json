@@ -1,0 +1,10 @@
+{
+  "name": "Chronicle AI Archive",
+  "description": "A comprehensive, searchable personal database for AI chat logs. Organizes conversations from multiple sources with AI-powered summarization, tagging, and MCP-ready data structures.",
+  "requestFramePermissions": [],
+  "desktop": {
+    "titleBarStyle": "hiddenInset",
+    "backgroundColor": "#fefef9"
+  },
+  "majorCapabilities": []
+}
