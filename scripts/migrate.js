@@ -1,11 +1,32 @@
 
 const { Pool } = require('pg');
+const { parse: parseConnectionString } = require('pg-connection-string');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive'
-});
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive';
+
+async function ensureDatabaseExists() {
+  const config = parseConnectionString(DATABASE_URL);
+  const targetDatabase = config.database || 'postgres';
+  const adminPool = new Pool({ ...config, database: 'postgres' });
+  try {
+    const result = await adminPool.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [targetDatabase]
+    );
+    if (result.rowCount === 0) {
+      console.log(`Database "${targetDatabase}" not found, creating it...`);
+      await adminPool.query(`CREATE DATABASE "${targetDatabase.replace(/"/g, '""')}"`);
+      console.log(`Database "${targetDatabase}" created.`);
+    }
+  } finally {
+    await adminPool.end();
+  }
+}
+
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 async function migrate() {
+  await ensureDatabaseExists();
   console.log('Starting migration to PostgreSQL...');
   const client = await pool.connect();
   try {

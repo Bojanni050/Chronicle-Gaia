@@ -3,18 +3,45 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
+const { parse: parseConnectionString } = require('pg-connection-string');
+
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive';
 
 // Initialize PostgreSQL Pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive'
-});
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 let mainWindow;
+
+/**
+ * Ensures the target database exists before the app pool connects to it.
+ * Connects to the default "postgres" maintenance database and creates the
+ * target database if it is missing, so a fresh local PostgreSQL install works
+ * on first launch without manual setup.
+ */
+async function ensureDatabaseExists() {
+  const config = parseConnectionString(DATABASE_URL);
+  const targetDatabase = config.database || 'postgres';
+  const adminPool = new Pool({ ...config, database: 'postgres' });
+  try {
+    const result = await adminPool.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [targetDatabase]
+    );
+    if (result.rowCount === 0) {
+      console.log(`[Chronicle] Database "${targetDatabase}" not found, creating it...`);
+      await adminPool.query(`CREATE DATABASE "${targetDatabase.replace(/"/g, '""')}"`);
+      console.log(`[Chronicle] Database "${targetDatabase}" created.`);
+    }
+  } finally {
+    await adminPool.end();
+  }
+}
 
 /**
  * Database Initialization for PostgreSQL
  */
 async function initDatabase() {
+  await ensureDatabaseExists();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
