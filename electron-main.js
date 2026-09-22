@@ -164,7 +164,12 @@ function createWindow() {
       contextIsolation: true 
     },
   });
-  mainWindow.loadFile('index.html');
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 }
 
 app.whenReady().then(async () => {

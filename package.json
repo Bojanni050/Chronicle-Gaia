@@ -5,7 +5,7 @@
   "description": "Native desktop version of the Chronicle AI Archive",
   "main": "electron-main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "vite build && electron .",
     "dev": "vite",
     "test": "vitest",
     "test:ui": "vitest --ui",
@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@google/genai": "^1.38.0",
-    "@modelcontextprotocol/sdk": "^0.6.0",
     "better-sqlite3": "^11.0.0",
     "pg": "^8.18.0",
     "react": "^19.0.0",
