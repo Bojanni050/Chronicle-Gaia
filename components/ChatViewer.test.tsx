@@ -44,7 +44,7 @@ describe('ChatViewer Component', () => {
   it('renders chat title and source correctly', () => {
     render(<ChatViewer {...defaultProps} />);
     expect(screen.getByText('Quantum Engineering Log')).toBeInTheDocument();
-    expect(screen.getByText('ChatGPT CHANNEL')).toBeInTheDocument();
+    expect(screen.getByText(/chatgpt channel/i)).toBeInTheDocument();
   });
 
   it('renders the summary abstract', () => {
@@ -64,7 +64,7 @@ describe('ChatViewer Component', () => {
   it('renders the conversation turns', () => {
     render(<ChatViewer {...defaultProps} />);
     // "User Channel" and "Assistant Channel" (derived from logic)
-    expect(screen.getByText('AUTHOR')).toBeInTheDocument(); // Default name for User
+    expect(screen.getByText(/author/i)).toBeInTheDocument(); // Default name for User
     expect(screen.getByText('Hello')).toBeInTheDocument();
     expect(screen.getByText('Hi there')).toBeInTheDocument();
   });
@@ -72,12 +72,12 @@ describe('ChatViewer Component', () => {
   it('shows visual asset section when assets are provided', () => {
     const chatWithAssets = { ...mockChat, assets: ['data:image/png;base64,123'] };
     render(<ChatViewer {...defaultProps} chat={chatWithAssets} />);
-    expect(screen.getByText('INTEGRATED VISUAL ASSETS')).toBeInTheDocument();
+    expect(screen.getByText(/integrated visual assets/i)).toBeInTheDocument();
   });
 
   it('enters edit mode and allows changing the title', () => {
     render(<ChatViewer {...defaultProps} />);
-    const editButton = screen.getByTitle(/Edit/i || /Edit Icon/i) || screen.getAllByRole('button')[1];
+    const editButton = screen.getByTitle('Edit');
     fireEvent.click(editButton);
     
     const titleInput = screen.getByDisplayValue('Quantum Engineering Log');

@@ -45,109 +45,6 @@ const DEFAULT_SETTINGS: Settings = {
   userName: ''
 };
 
-const generateMockEmbedding = (seed: string) => {
-  const embedding = [];
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  for (let i = 0; i < 32; i++) {
-    const val = Math.sin(hash + i * 2.71);
-    embedding.push(val);
-  }
-  const mag = Math.sqrt(embedding.reduce((acc, v) => acc + v * v, 0));
-  return embedding.map(v => v / mag);
-};
-
-const MOCK_IMAGES = [
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjYThhYjg4Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjIwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+U3lzdGVtIEFyY2hpdGVjdHVyZTwvdGV4dD48L3N2Zz4=',
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGJhYTg5Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjIwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+Q29uY2VwdHVhbCBNYXA8L3RleHQ+PC9zdmc+',
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMmMyYTI1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjIwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+RGF0YSBWaXN1YWxpemF0aW9uPC90ZXh0Pjwvc3ZnPg=='
-];
-
-const generateDemoData = () => {
-  const domains = [
-    { name: 'Quantum Engineering', tags: ['physics', 'qubits', 'entanglement'], context: 'Discussing superconducting loops and decoherence.' },
-    { name: 'Algorithmic Trading', tags: ['finance', 'python', 'markets'], context: 'Building low-latency execution engines for HFT.' },
-    { name: 'Cybernetic Philosophy', tags: ['ethics', 'ai', 'consciousness'], context: 'The overlap between neural networks and human cognition.' },
-    { name: 'Bioinformatics', tags: ['genetics', 'data', 'medicine'], context: 'Sequencing ancient DNA from permafrost samples.' },
-    { name: 'Modern Stoicism', tags: ['mindset', 'philosophy', 'health'], context: 'Applying Marcus Aurelius to high-stress tech roles.' },
-    { name: 'UX Psychology', tags: ['design', 'human', 'behavior'], context: 'Hick\'s Law in complex SaaS dashboards.' },
-    { name: 'Space Logistics', tags: ['nasa', 'mars', 'orbit'], context: 'Delta-V optimization for Mars-bound payload delivery.' },
-    { name: 'Rust Development', tags: ['coding', 'rust', 'safety'], context: 'Memory management without a garbage collector.' }
-  ];
-
-  const sources = [SourceType.CHATGPT, SourceType.CLAUDE, SourceType.GEMINI, SourceType.QWEN, SourceType.LOCAL];
-  const demoItems: ChatEntry[] = [];
-  const demoLinks: Link[] = [];
-
-  const generateRealisticChat = (domain: any) => {
-    const turns = Math.floor(Math.random() * 12) + 2; // Increased max turns for "real" length variety
-    let content = "";
-    for(let i=0; i<turns; i++) {
-      const role = i % 2 === 0 ? "User" : "Assistant";
-      const text = i === 0 
-        ? `I'm looking to understand ${domain.name.toLowerCase()} better. Specifically ${domain.tags[0]}.`
-        : i % 2 !== 0 
-          ? `${domain.context} This approach ensures that ${domain.tags[1]} remains stable under heavy load. Have you considered using ${domain.tags[2]}?`
-          : `Can you elaborate on the ${domain.tags[2]} aspect of that implementation? It seems like it would require ${Math.floor(Math.random()*100)}% more overhead.`;
-      content += `${role}: ${text}\n\n`;
-    }
-    return content;
-  };
-
-  // Exactly 1367 Chats
-  for (let i = 0; i < 1367; i++) {
-    const domain = domains[Math.floor(Math.random() * domains.length)];
-    const hasImage = Math.random() < 0.15; // 15% have images
-    const content = generateRealisticChat(domain);
-    
-    demoItems.push({
-      id: `demo-chat-${i}`,
-      type: ItemType.CHAT,
-      title: `${domain.name} Investigation - Session ${i + 500}`,
-      content: content,
-      summary: `In-depth exploration of ${domain.name.toLowerCase()} using ${domain.tags.join(', ')}.`,
-      tags: [...domain.tags, 'archived', 'demo'],
-      source: sources[Math.floor(Math.random() * sources.length)],
-      createdAt: Date.now() - Math.floor(Math.random() * 1000 * 60 * 60 * 24 * 730),
-      updatedAt: Date.now(),
-      embedding: generateMockEmbedding(domain.name),
-      assets: hasImage ? [MOCK_IMAGES[Math.floor(Math.random() * MOCK_IMAGES.length)]] : []
-    });
-  }
-
-  // Exactly 377 Notes
-  for (let i = 0; i < 377; i++) {
-    const domain = domains[Math.floor(Math.random() * domains.length)];
-    const noteId = `demo-note-${i}`;
-    
-    demoItems.push({
-      id: noteId,
-      type: ItemType.NOTE,
-      title: `Synthesis: ${domain.name} Framework`,
-      content: `# ${domain.name} Strategic Summary\n\nConsolidating findings from multiple AI interactions regarding ${domain.context.toLowerCase()}\n\n## Key Drivers\n- ${domain.tags[0]} stability\n- ${domain.tags[1]} integration\n- Optimization of ${domain.tags[2]}\n\nThis synthesis serves as a foundation for further architectural planning.`,
-      summary: `Consolidated intelligence for ${domain.name.toLowerCase()} strategy.`,
-      tags: [domain.tags[0], 'synthesis', 'strategic'],
-      source: SourceType.MANUAL,
-      createdAt: Date.now() - Math.floor(Math.random() * 1000 * 60 * 60 * 24 * 365),
-      updatedAt: Date.now(),
-      embedding: generateMockEmbedding(domain.name)
-    });
-
-    // Create relational links (connect 1-5 chats per note)
-    const relatedChats = demoItems.filter(item => 
-      item.type === ItemType.CHAT && 
-      item.tags.some(t => domain.tags.includes(t))
-    ).slice(0, Math.floor(Math.random() * 5) + 1);
-    
-    relatedChats.forEach(chat => {
-      demoLinks.push({ fromId: noteId, toId: chat.id, type: 'references', createdAt: Date.now() });
-    });
-  }
-
-  return { demoItems, demoLinks };
-};
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -193,14 +90,6 @@ const App: React.FC = () => {
         if (savedChats) initialChats = JSON.parse(savedChats);
         if (savedLinks) initialLinks = JSON.parse(savedLinks);
         if (savedSettings) initialSettings = JSON.parse(savedSettings);
-      }
-
-      if (initialChats.length < 50) {
-        const { demoItems, demoLinks } = generateDemoData();
-        const existingIds = new Set(initialChats.map(c => c.id));
-        const newDemoItems = demoItems.filter(d => !existingIds.has(d.id));
-        initialChats = [...newDemoItems, ...initialChats];
-        initialLinks = [...demoLinks, ...initialLinks];
       }
 
       setState(prev => ({
@@ -293,7 +182,7 @@ const App: React.FC = () => {
       source: SourceType.MANUAL,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      embedding: generateMockEmbedding('synthesis')
+      embedding: undefined
     };
     setState(prev => ({ 
       ...prev, 
@@ -301,16 +190,6 @@ const App: React.FC = () => {
       viewingChat: newNote, 
       viewMode: 'archive',
       selectedType: ItemType.NOTE 
-    }));
-  };
-
-  const handleAddDemo = () => {
-    const { demoItems, demoLinks } = generateDemoData();
-    setState(prev => ({ 
-      ...prev, 
-      chats: [...demoItems, ...prev.chats],
-      links: [...demoLinks, ...prev.links],
-      viewMode: 'dashboard'
     }));
   };
 
@@ -525,7 +404,6 @@ const App: React.FC = () => {
           onClose={() => setState(prev => ({ ...prev, isSettingsOpen: false }))}
           onSave={(settings) => setState(prev => ({ ...prev, settings }))}
           onBackup={() => {}} 
-          onAddDemo={handleAddDemo}
           onRemoveDemo={() => setState(prev => ({ ...prev, chats: prev.chats.filter(c => !c.id.startsWith('demo-')) }))}
           onClearAll={handleClearAll}
         />

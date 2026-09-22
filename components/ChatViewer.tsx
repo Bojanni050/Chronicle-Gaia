@@ -251,7 +251,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                          <input type="file" ref={assetInputRef} className="hidden" accept="image/*" onChange={handleAddAsset} />
                        </button>
                      )}
-                     <button onClick={() => setIsEditing(!isEditing)} className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
+                     <button onClick={() => setIsEditing(!isEditing)} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
                      <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-terracotta hover:text-red-600 transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><TrashIcon /></button>
                 </div>
             </div>

@@ -10,7 +10,6 @@ interface SettingsModalProps {
   settings: Settings;
   onClose: () => void;
   onSave: (settings: Settings) => void;
-  onAddDemo: () => void;
   onRemoveDemo: () => void;
   onBackup: () => void;
   onClearAll: () => void;
@@ -21,7 +20,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings, 
   onClose, 
   onSave, 
-  onAddDemo, 
   onRemoveDemo,
   onBackup,
   onClearAll,
@@ -156,8 +154,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <section>
                 <label className="block text-[10px] font-bold text-moss-brown mb-4 uppercase tracking-widest">Data Management</label>
                 <div className="grid grid-cols-2 gap-3">
-                  <button onClick={onAddDemo} className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-sandstone dark:border-slate-700 rounded-xl text-xs font-bold hover:bg-sandstone/10">Add Demo</button>
-                  <button onClick={onRemoveDemo} className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-sandstone dark:border-slate-700 rounded-xl text-xs font-bold hover:bg-sandstone/10">Remove Demo</button>
+                  <button onClick={onRemoveDemo} className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-sandstone dark:border-slate-700 rounded-xl text-xs font-bold hover:bg-sandstone/10">Remove Demo Data</button>
                   {window.electronAPI && (
                     <button onClick={handleNativeImport} className="col-span-2 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-lg">Native Bulk Import (GPT/Claude)</button>
                   )}
