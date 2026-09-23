@@ -404,7 +404,6 @@ const App: React.FC = () => {
           onClose={() => setState(prev => ({ ...prev, isSettingsOpen: false }))}
           onSave={(settings) => setState(prev => ({ ...prev, settings }))}
           onBackup={() => {}} 
-          onRemoveDemo={() => setState(prev => ({ ...prev, chats: prev.chats.filter(c => !c.id.startsWith('demo-')) }))}
           onClearAll={handleClearAll}
         />
       )}
