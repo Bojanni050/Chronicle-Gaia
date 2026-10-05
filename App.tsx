@@ -26,6 +26,16 @@ declare global {
       addLink: (fromId: string, toId: string, type?: string) => Promise<boolean>;
       removeLink: (fromId: string, toId: string) => Promise<boolean>;
       loadLinks: () => Promise<Link[]>;
+      captureChatToFoundation: (payload: any) => Promise<{
+        ok: boolean;
+        status?: number;
+        id?: string;
+        insertedNew?: boolean;
+        providerConversationId?: string;
+        ingestedAt?: string;
+        error?: string;
+        details?: string[];
+      }>;
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;

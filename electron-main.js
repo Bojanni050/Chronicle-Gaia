@@ -10,6 +10,74 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres
 // Initialize PostgreSQL Pool
 const pool = new Pool({ connectionString: DATABASE_URL });
 
+// ── Foundation capture connection ────────────────────────────────────────────
+// Chronicle's single connection to Gaia: POST a raw chat to Foundation's
+// Ingestie Gateway (POST /api/ingest/chat). This lives in the main process,
+// not the renderer, for two reasons:
+//   - Foundation's CORS/CSRF guard only allows localhost/127.0.0.1 and
+//     chrome-extension origins; a file:// renderer sends `Origin: null` (403).
+//   - the Bearer token never has to touch the renderer.
+//
+// Config resolution (URL and token), highest priority first:
+//   1. environment: FOUNDATION_URL / FOUNDATION_TOKEN / FOUNDATION_TOKEN_FILE
+//   2. a gitignored `foundation.local.json` ({ "url": "...", "token": "..." })
+//      next to the app, or in the userData dir
+//   3. the sibling Foundation checkout's server/data/token.txt (local dev)
+//   4. the loopback default for the URL
+const DEFAULT_FOUNDATION_URL = `http://127.0.0.1:${process.env.CHRONICLE_PORT || 4577}`;
+
+function loadFoundationConfigFile() {
+  const candidates = [
+    process.env.FOUNDATION_CONFIG_FILE,
+    path.join(__dirname, 'foundation.local.json'),
+    path.join(app.getPath('userData'), 'foundation.local.json'),
+  ].filter(Boolean);
+  for (const file of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      // Absent, unreadable or malformed — try the next candidate.
+    }
+  }
+  return {};
+}
+
+function readTokenFile(file) {
+  try {
+    const token = fs.readFileSync(file, 'utf8').trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the Foundation URL and Bearer token. Returns
+ * `{ url, token, tokenError }`; a null token is reported honestly to the
+ * caller instead of sending an unauthenticated request.
+ */
+function resolveFoundationConfig() {
+  const file = loadFoundationConfigFile();
+  const url = process.env.FOUNDATION_URL || file.url || DEFAULT_FOUNDATION_URL;
+
+  let token = process.env.FOUNDATION_TOKEN || (typeof file.token === 'string' ? file.token.trim() : null);
+  if (!token) {
+    const tokenFiles = [
+      process.env.FOUNDATION_TOKEN_FILE,
+      path.join(__dirname, '..', 'Foundation', 'server', 'data', 'token.txt'),
+      path.join(app.getAppPath(), '..', 'Foundation', 'server', 'data', 'token.txt'),
+    ].filter(Boolean);
+    for (const filePath of tokenFiles) {
+      token = readTokenFile(filePath);
+      if (token) break;
+    }
+  }
+
+  return { url, token };
+}
+
+
 let mainWindow;
 
 /**
@@ -281,6 +349,51 @@ ipcMain.handle('import-chats', async (event, existingIds) => {
   } catch (err) {
     console.error('[Chronicle] Import Error:', err);
     return { success: false, error: String(err), chats: [], skipped: 0 };
+  }
+});
+
+// Sends one already-built chat payload (utils/foundationCapture.ts) to
+// Foundation. The renderer builds the payload; this side supplies the token
+// and URL so no secret ever leaves the main process. Never throws — a capture
+// failure is a value the caller stores as "not yet sent", not a crash.
+ipcMain.handle('foundation-capture-chat', async (event, payload) => {
+  const { url, token } = resolveFoundationConfig();
+  if (!token) {
+    return {
+      ok: false,
+      error: 'no Foundation token found — set FOUNDATION_TOKEN, add foundation.local.json, or start Foundation',
+    };
+  }
+  try {
+    const response = await fetch(`${url}/api/ingest/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      // 422 = contract violation (details: [...]), 401 = bad token, 500 = server.
+      return {
+        ok: false,
+        status: response.status,
+        error: body.error || `ingest failed with status ${response.status}`,
+        details: body.details,
+      };
+    }
+    return {
+      ok: true,
+      status: response.status, // 201 = new, 200 = upsert of a grown conversation
+      id: body.id,
+      insertedNew: body.insertedNew,
+      providerConversationId: body.providerConversationId,
+      ingestedAt: body.ingestedAt,
+    };
+  } catch (err) {
+    console.error('[Chronicle] Foundation capture error:', err);
+    return { ok: false, error: err.message || String(err) };
   }
 });
 

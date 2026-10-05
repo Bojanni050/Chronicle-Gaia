@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addLink: (fromId, toId, type) => ipcRenderer.invoke('add-link', { fromId, toId, type }),
   removeLink: (fromId, toId) => ipcRenderer.invoke('remove-link', { fromId, toId }),
   loadLinks: () => ipcRenderer.invoke('load-links'),
+  captureChatToFoundation: (payload) => ipcRenderer.invoke('foundation-capture-chat', payload),
   exportChats: (chats, format) => ipcRenderer.invoke('export-chats', { chats, format }),
   importChats: (existingIds) => ipcRenderer.invoke('import-chats', existingIds),
   sendNotification: (title, body) => ipcRenderer.send('notify', { title, body }),
