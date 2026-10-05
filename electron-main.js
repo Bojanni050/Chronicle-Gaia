@@ -52,6 +52,42 @@ function readTokenFile(file) {
   }
 }
 
+// ── Local source-file copy (Chronicle's byte-for-byte mirror) ────────────────
+// Foundation owns the original; Chronicle keeps an identical copy so the two
+// can never drift (see Gaia-Documentation/capture-chronicle.md). The copy is
+// content-addressed by sha256 exactly like Foundation's store, so the hashes
+// are directly comparable and a mirror is provably identical.
+const crypto = require('crypto');
+
+function chronicleBlobsDir() {
+  return process.env.CHRONICLE_BLOBS_DIR || path.join(app.getPath('userData'), 'source-blobs');
+}
+
+function sha256Hex(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+/** Writes a local mirror of the source file. Add-only: identical bytes reuse. */
+function putLocalBlob(buffer, { filename, mimeType } = {}) {
+  const hash = sha256Hex(buffer);
+  const dir = path.join(chronicleBlobsDir(), hash.slice(0, 2), hash);
+  const metaPath = path.join(dir, 'meta.json');
+  if (fs.existsSync(metaPath)) {
+    return { ...JSON.parse(fs.readFileSync(metaPath, 'utf8')), reused: true };
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'content'), buffer, { flag: 'wx' });
+  const meta = {
+    hash,
+    size: buffer.length,
+    filename: filename ? path.basename(filename) : null,
+    mimeType: mimeType || 'application/octet-stream',
+    createdAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(metaPath, JSON.stringify(meta));
+  return { ...meta, reused: false };
+}
+
 /**
  * Resolves the Foundation URL and Bearer token. Returns
  * `{ url, token, tokenError }`; a null token is reported honestly to the
@@ -130,7 +166,8 @@ async function initDatabase() {
         embedding double precision[],
         assets JSONB DEFAULT '[]',
         capture JSONB,
-        foundation JSONB
+        foundation JSONB,
+        "sourceFile" JSONB
       )
     `);
 
@@ -156,6 +193,7 @@ async function initDatabase() {
     // holds the delivery status. Neither ever leaves the archive.
     await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS capture JSONB');
     await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS foundation JSONB');
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS "sourceFile" JSONB');
 
     await client.query('COMMIT');
     console.log('[Chronicle] PostgreSQL Schema verified.');
@@ -174,8 +212,8 @@ ipcMain.handle('save-database', async (event, items) => {
     await client.query('BEGIN');
     for (const item of items) {
       await client.query(`
-        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets, capture, foundation)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets, capture, foundation, "sourceFile")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (id) DO UPDATE SET
           type = EXCLUDED.type,
           title = EXCLUDED.title,
@@ -187,7 +225,8 @@ ipcMain.handle('save-database', async (event, items) => {
           embedding = EXCLUDED.embedding,
           assets = EXCLUDED.assets,
           capture = EXCLUDED.capture,
-          foundation = EXCLUDED.foundation
+          foundation = EXCLUDED.foundation,
+          "sourceFile" = EXCLUDED."sourceFile"
       `, [
         item.id,
         item.type || 'chat',
@@ -202,7 +241,8 @@ ipcMain.handle('save-database', async (event, items) => {
         item.embedding,
         JSON.stringify(item.assets || []),
         item.capture ? JSON.stringify(item.capture) : null,
-        item.foundation ? JSON.stringify(item.foundation) : null
+        item.foundation ? JSON.stringify(item.foundation) : null,
+        item.sourceFile ? JSON.stringify(item.sourceFile) : null
       ]);
     }
     await client.query('COMMIT');
@@ -227,6 +267,7 @@ ipcMain.handle('load-database', async () => {
       assets: typeof r.assets === 'string' ? JSON.parse(r.assets) : r.assets,
       capture: typeof r.capture === 'string' ? JSON.parse(r.capture) : r.capture,
       foundation: typeof r.foundation === 'string' ? JSON.parse(r.foundation) : r.foundation,
+      sourceFile: typeof r.sourceFile === 'string' ? JSON.parse(r.sourceFile) : r.sourceFile,
       embedding: r.embedding
     }));
   } catch (err) {
@@ -424,6 +465,54 @@ ipcMain.handle('foundation-capture-chat', async (event, payload) => {
   } catch (err) {
     console.error('[Chronicle] Foundation capture error:', err);
     return { ok: false, error: err.message || String(err) };
+  }
+});
+
+// Sends one source file to Foundation: mirrors it locally first (byte-for-byte,
+// Chronicle's copy), then uploads the same bytes to Foundation (the owner).
+// Returns both hashes so a mismatch is impossible to miss. Never throws.
+ipcMain.handle('foundation-capture-source-file', async (event, { path: filePath, filename, mimeType } = {}) => {
+  if (!filePath) return { ok: false, error: 'no source file path given' };
+  let bytes;
+  try {
+    bytes = fs.readFileSync(filePath);
+  } catch (err) {
+    return { ok: false, error: `cannot read source file: ${err.message}` };
+  }
+  const local = putLocalBlob(bytes, { filename: filename || filePath, mimeType });
+
+  const { url, token } = resolveFoundationConfig();
+  if (!token) {
+    return { ok: false, hash: local.hash, size: local.size, error: 'no Foundation token found', mirrored: true };
+  }
+  try {
+    const response = await fetch(`${url}/api/source-files`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': mimeType || 'application/octet-stream',
+        Authorization: `Bearer ${token}`,
+        'X-Source-Filename': encodeURIComponent(filename || path.basename(filePath)),
+      },
+      body: bytes,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, hash: local.hash, size: local.size, status: response.status, error: body.error || `upload failed (${response.status})`, mirrored: true };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      hash: local.hash,
+      remoteHash: body.hash,
+      identical: body.hash === local.hash,
+      size: local.size,
+      ingestObjectId: body.ingestObjectId,
+      reused: body.reused,
+      mirrored: true,
+    };
+  } catch (err) {
+    console.error('[Chronicle] Source-file capture error:', err);
+    return { ok: false, hash: local.hash, size: local.size, error: err.message || String(err), mirrored: true };
   }
 });
 

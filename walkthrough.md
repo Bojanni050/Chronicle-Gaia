@@ -117,3 +117,33 @@
     zelfde `providerConversationId claude:…`. Test-observatie daarna opgeruimd
     (episode + gateway-rij, trigger terug op `O`).
   - Validatie: 39 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-05 (Capture-verbinding, fase 4 — bronbestand als blob, eigenaar Foundation)
+
+- Findings:
+  - Besluit (gebruiker): Foundation is **eigenaar** van het originele
+    exportbestand; Chronicle houdt een identieke byte-for-byte kopie. Het hele
+    bestand gaat als één blob naar Foundation; daarnaast elk gesprek rauw als
+    chat. De blob is het "ultieme bewijs", waardoor elke ontledingskeuze aan de
+    capture-kant herleidbaar en herhaalbaar is.
+- Conclusions:
+  - Chronicle's kopie is content-addressed op **dezelfde** sha256 als Foundation,
+    zodat de hashes direct vergelijkbaar zijn en een mismatch zichtbaar is
+    (`identical`-vlag). Mirror eerst, dan pas verzenden.
+  - Het bronbestand is een apart ding, niet een veld van de chat: aparte
+    `sourceFile`-state op de entry, met eigen status en retry.
+- Actions:
+  - `electron-main.js`: lokale blob-mirror (`putLocalBlob`, sha256) + IPC
+    `foundation-capture-source-file` (mirror → POST `/api/source-files`, geeft
+    beide hashes terug); `sourceFile`-kolom in save/load + init/migratie.
+  - `electron-preload.js`: `captureSourceFileToFoundation` + `getPathForFile`
+    (webUtils) zodat de renderer het echte bestandspad kan doorgeven.
+  - `types.ts`: `SourceFileState` + `ChatEntry.sourceFile`.
+  - `UploadModal.tsx`: `SourceFileRef` per bestand (ook voor afbeeldingen, die
+    context kunnen dragen), doorgegeven aan `onUpload`.
+  - `App.tsx`: `captureSourceFile`/`setSourceFileState`/`handleRetrySourceFile`;
+    volgorde archief → bronbestand → chat.
+  - `ChatViewer.tsx`: status-pil "Original mirrored"/"Sending original…"/"Original
+    not sent" + Retry file.
+  - Validatie: 39 tests groen, `vite build` ok, `node --check` ok. Live blob-
+    upload tegen de VPS bewezen (sha256 identiek, idempotent).

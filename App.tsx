@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState } from './types';
+import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
 import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon } from './components/Icons';
-import { UploadModal } from './components/UploadModal';
+import { UploadModal, SourceFileRef } from './components/UploadModal';
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
@@ -37,6 +37,19 @@ declare global {
         error?: string;
         details?: string[];
       }>;
+      captureSourceFileToFoundation: (file: { path: string; filename: string; mimeType: string }) => Promise<{
+        ok: boolean;
+        hash: string;
+        remoteHash?: string;
+        identical?: boolean;
+        size: number;
+        status?: number;
+        ingestObjectId?: string;
+        reused?: boolean;
+        mirrored?: boolean;
+        error?: string;
+      }>;
+      getPathForFile: (file: File) => string;
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
@@ -178,6 +191,45 @@ const App: React.FC = () => {
     }));
   };
 
+  const setSourceFileState = (id: string, sourceFile: SourceFileState) => {
+    setState(prev => ({
+      ...prev,
+      chats: prev.chats.map(c => (c.id === id ? { ...c, sourceFile } : c)),
+      viewingChat: prev.viewingChat?.id === id ? { ...prev.viewingChat, sourceFile } : prev.viewingChat,
+    }));
+  };
+
+  // Mirrors the original file locally and sends the same bytes to Foundation
+  // (the owner). A failure leaves the mirror note on the entry for a retry.
+  const captureSourceFile = async (chat: ChatEntry, ref: SourceFileRef) => {
+    if (!window.electronAPI?.captureSourceFileToFoundation) return;
+    const result = await window.electronAPI.captureSourceFileToFoundation(ref);
+    if (result.ok) {
+      setSourceFileState(chat.id, {
+        hash: result.hash,
+        size: result.size,
+        filename: ref.filename,
+        mimeType: ref.mimeType,
+        path: ref.path,
+        status: 'sent',
+        identical: result.identical,
+        ingestObjectId: result.ingestObjectId,
+        at: Date.now(),
+      });
+    } else {
+      setSourceFileState(chat.id, {
+        hash: result.hash || '',
+        size: result.size || 0,
+        filename: ref.filename,
+        mimeType: ref.mimeType,
+        path: ref.path,
+        status: 'failed',
+        error: result.error || 'source file capture failed',
+        at: Date.now(),
+      });
+    }
+  };
+
   // Sends one chat's raw capture to Foundation and records the delivery status
   // on the entry. Never throws: a failure here becomes a retryable state, it
   // can never undo the archive write that already happened.
@@ -214,7 +266,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData) => {
+  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef) => {
     const now = Date.now();
     const newChat: ChatEntry = {
       id: Math.random().toString(36).substr(2, 9),
@@ -225,14 +277,26 @@ const App: React.FC = () => {
       fileName, embedding, assets,
       capture,
       foundation: capture ? { status: 'pending', at: now } : undefined,
+      sourceFile: sourceFileRef ? { hash: '', size: 0, filename: sourceFileRef.filename, mimeType: sourceFileRef.mimeType, path: sourceFileRef.path, status: 'pending', at: now } : undefined,
     };
-    // Archive first. Persistence of the entry never waits on the capture step.
+    // Archive first. Persistence of the entry never waits on the capture steps.
     setState(prev => ({ ...prev, chats: [newChat, ...prev.chats], isUploading: false, viewingChat: newChat, viewMode: 'archive' }));
+    // Then, in order: the original file (the proof), then the raw chat.
+    if (sourceFileRef) void captureSourceFile(newChat, sourceFileRef);
     if (capture) void captureToFoundation(newChat);
   };
 
   const handleRetryCapture = (chat: ChatEntry) => {
     void captureToFoundation(chat);
+  };
+
+  const handleRetrySourceFile = (chat: ChatEntry) => {
+    if (!chat.sourceFile?.path) return;
+    void captureSourceFile(chat, {
+      path: chat.sourceFile.path,
+      filename: chat.sourceFile.filename || chat.fileName || 'export',
+      mimeType: chat.sourceFile.mimeType || 'application/octet-stream',
+    });
   };
 
   const handleCreateNote = () => {
@@ -432,6 +496,7 @@ const App: React.FC = () => {
                   returnToMindMap={state.returnToMindMap}
                   activeRelatedTags={state.relatedTags}
                   onRetryCapture={handleRetryCapture}
+                  onRetrySourceFile={handleRetrySourceFile}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">

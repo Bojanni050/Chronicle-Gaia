@@ -55,6 +55,26 @@ export interface CaptureData {
   turns?: CaptureTurn[];
 }
 
+export type SourceFileStatus = 'pending' | 'sent' | 'failed';
+
+/**
+ * The original file a chat was parsed from. Foundation owns it; Chronicle keeps
+ * an identical byte-for-byte copy. Tracked separately from the chat capture
+ * because it is a distinct thing (the file), not a field of the chat.
+ */
+export interface SourceFileState {
+  hash: string;
+  size: number;
+  filename?: string;
+  mimeType?: string;
+  path?: string; // local path, for re-sending
+  status: SourceFileStatus;
+  identical?: boolean; // Chronicle's hash === Foundation's hash
+  ingestObjectId?: string;
+  error?: string;
+  at?: number;
+}
+
 export type FoundationCaptureStatus = 'pending' | 'sent' | 'failed';
 
 /** Local bookkeeping of whether this chat reached Foundation. Never sent. */
@@ -84,6 +104,7 @@ export interface ChatEntry {
   assets?: string[]; // Base64 encoded image strings or URIs
   capture?: CaptureData; // raw capture fields kept for (re)sending to Foundation
   foundation?: FoundationCaptureState; // delivery status of the capture step
+  sourceFile?: SourceFileState; // state of the original file (blob) for this import
 }
 
 /**

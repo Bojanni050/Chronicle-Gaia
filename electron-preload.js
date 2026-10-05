@@ -1,5 +1,5 @@
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isNative: true,
@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeLink: (fromId, toId) => ipcRenderer.invoke('remove-link', { fromId, toId }),
   loadLinks: () => ipcRenderer.invoke('load-links'),
   captureChatToFoundation: (payload) => ipcRenderer.invoke('foundation-capture-chat', payload),
+  captureSourceFileToFoundation: (file) => ipcRenderer.invoke('foundation-capture-source-file', file),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   exportChats: (chats, format) => ipcRenderer.invoke('export-chats', { chats, format }),
   importChats: (existingIds) => ipcRenderer.invoke('import-chats', existingIds),
   sendNotification: (title, body) => ipcRenderer.send('notify', { title, body }),

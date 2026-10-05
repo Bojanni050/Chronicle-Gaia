@@ -23,6 +23,7 @@ interface ChatViewerProps {
   onTagClick: (tag: string) => void;
   activeRelatedTags?: string[];
   onRetryCapture?: (chat: ChatEntry) => void;
+  onRetrySourceFile?: (chat: ChatEntry) => void;
 }
 
 const ImageGallery: React.FC<{ assets: string[] }> = ({ assets }) => (
@@ -157,7 +158,7 @@ const AIMessageContent: React.FC<{ message: Message; source: string }> = ({ mess
 );
 
 export const ChatViewer: React.FC<ChatViewerProps> = ({ 
-  chat, allChats, allLinks, onClose, onDelete, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [], onRetryCapture 
+  chat, allChats, allLinks, onClose, onDelete, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [], onRetryCapture, onRetrySourceFile 
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -257,24 +258,47 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                 </div>
             </div>
 
-            {!isNote && chat.foundation && (
+            {!isNote && (chat.sourceFile || chat.foundation) && (
               <div className="mt-3 flex items-center gap-3 flex-wrap">
-                {chat.foundation.status === 'sent' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-green/10 text-sage-green text-[10px] font-black uppercase tracking-widest">
-                    Captured to Gaia
-                  </span>
-                ) : (
+                {chat.sourceFile && (
                   <>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
-                      {chat.foundation.status === 'pending' ? 'Sending to Gaia…' : 'Not sent to Gaia'}
-                    </span>
-                    <button onClick={() => onRetryCapture?.(chat)} className="text-[10px] font-black uppercase tracking-widest text-sage-green hover:underline">
-                      Retry
-                    </button>
-                    {chat.foundation.status === 'failed' && chat.foundation.error && (
-                      <span className="text-[10px] text-moss-brown truncate max-w-md">{chat.foundation.error}</span>
+                    {chat.sourceFile.status === 'sent' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-green/10 text-sage-green text-[10px] font-black uppercase tracking-widest" title={chat.sourceFile.hash}>
+                        Original{chat.sourceFile.identical === false ? ' (hash mismatch!)' : ' mirrored'}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
+                          {chat.sourceFile.status === 'pending' ? 'Sending original…' : 'Original not sent'}
+                        </span>
+                        <button onClick={() => onRetrySourceFile?.(chat)} className="text-[10px] font-black uppercase tracking-widest text-sage-green hover:underline">
+                          Retry file
+                        </button>
+                        {chat.sourceFile.status === 'failed' && chat.sourceFile.error && (
+                          <span className="text-[10px] text-moss-brown truncate max-w-md">{chat.sourceFile.error}</span>
+                        )}
+                      </>
                     )}
                   </>
+                )}
+                {chat.foundation && (
+                  chat.foundation.status === 'sent' ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-green/10 text-sage-green text-[10px] font-black uppercase tracking-widest">
+                      Captured to Gaia
+                    </span>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
+                        {chat.foundation.status === 'pending' ? 'Sending to Gaia…' : 'Not sent to Gaia'}
+                      </span>
+                      <button onClick={() => onRetryCapture?.(chat)} className="text-[10px] font-black uppercase tracking-widest text-sage-green hover:underline">
+                        Retry
+                      </button>
+                      {chat.foundation.status === 'failed' && chat.foundation.error && (
+                        <span className="text-[10px] text-moss-brown truncate max-w-md">{chat.foundation.error}</span>
+                      )}
+                    </>
+                  )
                 )}
               </div>
             )}

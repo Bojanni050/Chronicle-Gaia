@@ -8,8 +8,19 @@ import { parseConversationJson, parseClaudeExport, ParsedConversation } from '..
 
 interface UploadModalProps {
   onClose: () => void;
-  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData) => void;
+  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFile?: SourceFileRef) => void;
   settings: Settings;
+}
+
+/**
+ * The original file this import came from, kept so the caller can mirror it and
+ * send it to Foundation (the owner). `path` is the real filesystem path, only
+ * obtainable in Electron via getPathForFile.
+ */
+export interface SourceFileRef {
+  path: string;
+  filename: string;
+  mimeType: string;
 }
 
 interface ProcessResult {
@@ -17,6 +28,7 @@ interface ProcessResult {
   success: boolean;
   error?: string;
   isImage?: boolean;
+  sourceFile?: SourceFileRef;
   data?: {
     content: string;
     title: string;
@@ -108,6 +120,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
     const isImage = file.type.startsWith('image/');
     const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
+    // The real path of the file, so the original can be mirrored byte-for-byte
+    // and sent to Foundation. Absent in a plain browser (no Electron bridge).
+    const sourceFile: SourceFileRef | undefined = window.electronAPI?.getPathForFile
+      ? (() => {
+          try {
+            const p = window.electronAPI.getPathForFile(file);
+            return p ? { path: p, filename: file.name, mimeType: file.type || 'application/octet-stream' } : undefined;
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined;
+
     try {
       if (isImage) {
         const base64 = await new Promise<string>((resolve) => {
@@ -126,6 +151,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           fileName: file.name,
           success: true,
           isImage: true,
+          sourceFile,
           data: {
             content: `[Visual Asset: ${file.name}]\n\n${metadata.summary}`,
             title: metadata.suggestedTitle,
@@ -158,7 +184,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
         for (const [name, conv] of parsed) {
           if (!conv) continue;
           const label = parsed.length > 1 ? `${name} (${index})` : name;
-          results.push(await resultFromConversation(label, conv, toSourceProvider(source) || 'other'));
+          const r = await resultFromConversation(label, conv, toSourceProvider(source) || 'other');
+          results.push({ ...r, sourceFile });
           index++;
         }
         if (results.length === 0) throw new Error('Invalid chat structure');
@@ -172,6 +199,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
       return [{
         fileName: file.name,
         success: true,
+        sourceFile,
         data: {
           content: finalContent,
           title: metadata.suggestedTitle,
@@ -229,7 +257,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           res.fileName, 
           res.data.embedding,
           res.data.assets,
-          capture
+          capture,
+          res.sourceFile
         );
       }
     });
