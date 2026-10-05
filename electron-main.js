@@ -113,6 +113,34 @@ function resolveFoundationConfig() {
   return { url, token };
 }
 
+// ── Gemini enrichment key ────────────────────────────────────────────────────
+// The key must NEVER reach the renderer: a `process.env` reference there breaks
+// (Vite doesn't define it) and any "fix" via define would bake it into the
+// client bundle. So the key lives here and the Gemini calls are made from the
+// main process, exactly like the Foundation token.
+function loadEnvLocal() {
+  const candidates = [
+    path.join(__dirname, '.env.local'),
+    path.join(app.getAppPath(), '.env.local'),
+  ];
+  for (const file of candidates) {
+    try {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const line of text.split(/\r?\n/)) {
+        const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
+        if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      }
+    } catch {
+      // absent — try the next candidate
+    }
+  }
+}
+
+function resolveGeminiKey() {
+  if (!process.env.API_KEY) loadEnvLocal();
+  return process.env.API_KEY || process.env.GEMINI_API_KEY || null;
+}
+
 
 let mainWindow;
 
@@ -518,8 +546,8 @@ ipcMain.handle('foundation-capture-source-file', async (event, { path: filePath,
 
 // Uploads one attachment (an image that is part of a conversation) to
 // Foundation's attachment store and returns its metadata, which the chat
-// payload then references. The bytes live in Foundation; the chat only carries
-// the reference. Never throws.
+// payload then references. Accepts either a file path or inline bytes (a data
+// URL from an export). Never throws.
 ipcMain.handle('foundation-upload-attachment', async (event, { path: filePath, dataUrl, filename, mimeType } = {}) => {
   let bytes;
   let resolvedMime = mimeType;
@@ -557,6 +585,86 @@ ipcMain.handle('foundation-upload-attachment', async (event, { path: filePath, d
     return { ok: true, status: response.status, attachment: body };
   } catch (err) {
     console.error('[Chronicle] Attachment upload error:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
+// ── Gemini enrichment (runs here so the key stays out of the renderer) ───────
+ipcMain.handle('analyze-content', async (event, { content, imageMimeType, preferredModel } = {}) => {
+  const apiKey = resolveGeminiKey();
+  if (!apiKey) return { ok: false, error: 'no Gemini API key (set API_KEY in .env.local)' };
+  try {
+    const { GoogleGenAI, Type } = require('@google/genai');
+    const ai = new GoogleGenAI({ apiKey });
+    const isImage = !!imageMimeType;
+    const prompt = isImage
+      ? 'Describe this image in detail for a searchable digital archive. Provide a suggested title, a summary, and relevant tags.'
+      : 'Summarize this AI conversation, suggest a title and tags.';
+    const contentPart = isImage
+      ? { inlineData: { data: content, mimeType: imageMimeType } }
+      : { text: String(content).substring(0, 10000) };
+    const systemInstruction = `You are a professional digital archivist. 
+    Return a JSON object with:
+    1. "summary": A clear, high-level, one-sentence summary.
+    2. "tags": An array of 3-6 relevant, lowercase, single-word tags.
+    3. "suggestedTitle": A short descriptive title.`;
+    const response = await ai.models.generateContent({
+      // gemini-flash-latest: a stable alias that tracks the current flash model.
+      model: isImage ? 'gemini-flash-latest' : (preferredModel || 'gemini-flash-latest'),
+      contents: { parts: [contentPart, { text: prompt }] },
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+            suggestedTitle: { type: Type.STRING },
+          },
+          required: ['summary', 'tags', 'suggestedTitle'],
+        },
+      },
+    });
+    return { ok: true, metadata: JSON.parse(response.text || '{}') };
+  } catch (err) {
+    console.error('[Chronicle] analyze-content failed:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('generate-embedding', async (event, { text } = {}) => {
+  const apiKey = resolveGeminiKey();
+  if (!apiKey) return { ok: false, error: 'no Gemini API key' };
+  try {
+    const { GoogleGenAI } = require('@google/genai');
+    const ai = new GoogleGenAI({ apiKey });
+    // gemini-embedding-001 replaced text-embedding-004; the response is
+    // embeddings[0].values (the singular `embedding` field no longer exists).
+    const response = await ai.models.embedContent({
+      model: 'gemini-embedding-001',
+      contents: [{ parts: [{ text: String(text).substring(0, 9000) }] }],
+    });
+    const values = response.embeddings?.[0]?.values;
+    return { ok: !!values, embedding: values, error: values ? undefined : 'no embedding returned' };
+  } catch (err) {
+    console.warn('[Chronicle] generate-embedding failed:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
+ipcMain.handle('fetch-models', async () => {
+  const apiKey = resolveGeminiKey();
+  if (!apiKey) return { ok: false, error: 'no Gemini API key' };
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!response.ok) return { ok: false, error: `Google API responded with status ${response.status}` };
+    const data = await response.json();
+    const models = (data.models || [])
+      .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+      .map((m) => m.name.replace('models/', ''));
+    return { ok: true, models: models.length ? models : ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash'] };
+  } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }
 });

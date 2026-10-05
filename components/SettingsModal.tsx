@@ -185,7 +185,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {fetchError && <p className="text-[10px] text-red-500 font-bold">{fetchError}</p>}
                 <select value={localSettings.preferredModel} onChange={(e) => setLocalSettings({...localSettings, preferredModel: e.target.value})} className="w-full bg-white dark:bg-slate-900 border border-sandstone rounded-lg px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-sage-green">
                   {localSettings.availableModels.map(m => <option key={m} value={m}>{m}</option>)}
-                  {localSettings.availableModels.length === 0 && <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>}
+                  {localSettings.availableModels.length === 0 && <option value="gemini-flash-latest">gemini-flash-latest</option>}
                 </select>
               </div>
             </section>

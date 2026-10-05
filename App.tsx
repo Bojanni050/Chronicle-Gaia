@@ -56,6 +56,9 @@ declare global {
         error?: string;
       }>;
       getPathForFile: (file: File) => string;
+      analyzeContent: (args: { content: string; imageMimeType?: string; preferredModel?: string }) => Promise<{ ok: boolean; metadata?: { summary: string; tags: string[]; suggestedTitle: string }; error?: string }>;
+      generateEmbedding: (args: { text: string }) => Promise<{ ok: boolean; embedding?: number[]; error?: string }>;
+      fetchModels: () => Promise<{ ok: boolean; models?: string[]; error?: string }>;
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
@@ -67,7 +70,7 @@ declare global {
 const DEFAULT_SETTINGS: Settings = {
   theme: Theme.LIGHT,
   aiProvider: AIProvider.GEMINI,
-  preferredModel: 'gemini-3-flash-preview',
+  preferredModel: 'gemini-flash-latest',
   customEndpoint: 'http://localhost:1234/v1/chat/completions',
   relatedChatsLimit: 9,
   availableModels: [],

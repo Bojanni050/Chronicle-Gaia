@@ -178,3 +178,32 @@
     referentie → `attachments` op de observatie, bytes op schijf. Daarna
     opgeruimd (trigger terug op `O`).
   - Validatie: 43 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-05 (Gemini-verrijking gerepareerd — key naar het main-proces)
+
+- Findings:
+  - `services/geminiService.ts` las `process.env.API_KEY` in de **renderer**;
+    Vite definieert dat niet, dus de verrijking was stuk. Een `define` als "fix"
+    zou de key in de client-bundle bakken — een lek.
+  - Live tegen de Gemini-API bleek de key **geldig**, maar de modellen bestaan
+    niet meer: `gemini-3-flash-preview` staat niet in de model-lijst, en
+    `text-embedding-004` is vervangen door `gemini-embedding-001` (response is
+    `embeddings[0].values`, niet `embedding.values`).
+- Conclusions:
+  - De key hoort in het main-proces, precies zoals de Foundation-token. De
+    Gemini-calls zijn naar IPC verplaatst; de renderer raakt de key nooit aan.
+  - Modellen naar bestaande alternatieven: `gemini-flash-latest` (stabiele
+    alias) en `gemini-embedding-001`.
+- Actions:
+  - `electron-main.js`: `resolveGeminiKey()` + `.env.local`-loader; IPC-handlers
+    `analyze-content`, `generate-embedding`, `fetch-models` (met de juiste
+    modellen en response-vorm).
+  - `electron-preload.js`: de drie handlers exposed.
+  - `services/geminiService.ts`: herschreven naar IPC (`window.electronAPI`),
+    geen `process.env.API_KEY` meer; browser-fallback faalt eerlijk.
+  - Defaults gelijkgetrokken: `App.tsx`, `SettingsModal.tsx`, `geminiService`,
+    `fetch-models`-fallback.
+  - Live bewezen: `analyze-content` → geldige JSON (summary/tags/title),
+    `generate-embedding` → 3072 dims. Build-bundle kromp 768 kB → 490 kB (de
+    `@google/genai`-SDK zit niet meer in de renderer).
+  - Validatie: 43 tests groen, `vite build` ok, `node --check` ok.
