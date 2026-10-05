@@ -95,6 +95,7 @@ const App: React.FC = () => {
     viewingChat: null,
     settings: DEFAULT_SETTINGS,
     returnToMindMap: false,
+    showArchived: false,
     searchFilters: {
         sources: [],
         dateStart: '',
@@ -359,7 +360,18 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, chats: [], viewingChat: null, links: [] }));
   };
 
-  const handleDelete = (id: string) => setState(prev => ({ ...prev, chats: prev.chats.filter(c => c.id !== id), viewingChat: prev.viewingChat?.id === id ? null : prev.viewingChat, links: prev.links.filter(l => l.fromId !== id && l.toId !== id) }));
+  // Archiving hides a chat from the active archive but keeps it in Chronicle
+  // (and in Gaia). It never deletes the row and never touches the Foundation
+  // observation — see capture-chronicle.md.
+  const handleArchive = (id: string) => setState(prev => ({
+    ...prev,
+    chats: prev.chats.map(c => c.id === id ? { ...c, archived: true, updatedAt: Date.now() } : c),
+    viewingChat: prev.viewingChat?.id === id ? null : prev.viewingChat,
+  }));
+  const handleRestore = (id: string) => setState(prev => ({
+    ...prev,
+    chats: prev.chats.map(c => c.id === id ? { ...c, archived: false, updatedAt: Date.now() } : c),
+  }));
   const handleUpdate = (updatedChat: ChatEntry) => setState(prev => ({ ...prev, chats: prev.chats.map(c => c.id === updatedChat.id ? { ...updatedChat, updatedAt: Date.now() } : c), viewingChat: prev.viewingChat?.id === updatedChat.id ? updatedChat : prev.viewingChat }));
   const handleSelectChat = (chat: ChatEntry, fromMindMap: boolean = false) => setState(prev => ({ ...prev, viewingChat: chat, returnToMindMap: fromMindMap, viewMode: 'archive', isRightPanelOpen: false }));
   
@@ -396,10 +408,11 @@ const App: React.FC = () => {
         const matchesSource = state.selectedSource === 'All' || chat.source === state.selectedSource;
         const matchesDateStart = !state.searchFilters.dateStart || chat.createdAt >= new Date(state.searchFilters.dateStart).getTime();
         const matchesDateEnd = !state.searchFilters.dateEnd || chat.createdAt <= new Date(state.searchFilters.dateEnd).getTime() + 86400000;
+        const matchesArchived = state.showArchived ? !!chat.archived : !chat.archived;
 
-        return matchesSearch && matchesTags && matchesType && matchesSource && matchesDateStart && matchesDateEnd;
+        return matchesSearch && matchesTags && matchesType && matchesSource && matchesDateStart && matchesDateEnd && matchesArchived;
     });
-  }, [state.chats, state.searchQuery, state.selectedTags, state.selectedType, state.selectedSource, state.searchFilters.dateStart, state.searchFilters.dateEnd]);
+  }, [state.chats, state.searchQuery, state.selectedTags, state.selectedType, state.selectedSource, state.searchFilters.dateStart, state.searchFilters.dateEnd, state.showArchived]);
 
   const relatedChats = useMemo(() => {
       const tags = state.relatedTags || [];
@@ -511,6 +524,8 @@ const App: React.FC = () => {
               dateEnd={state.searchFilters.dateEnd}
               onDateRangeChange={(start, end) => setState(prev => ({ ...prev, searchFilters: { ...prev.searchFilters, dateStart: start, dateEnd: end } }))}
               activeRelatedTags={state.relatedTags}
+              showArchived={state.showArchived}
+              onShowArchivedChange={(show) => setState(prev => ({ ...prev, showArchived: show }))}
             />
 
             <main className="flex-1 bg-paper dark:bg-stone-950 relative overflow-hidden">
@@ -520,7 +535,8 @@ const App: React.FC = () => {
                   allChats={state.chats}
                   allLinks={state.links}
                   onClose={() => setState(prev => ({ ...prev, viewingChat: null, viewMode: prev.returnToMindMap ? 'mindmap' : 'archive', returnToMindMap: false }))}
-                  onDelete={handleDelete}
+                  onArchive={handleArchive}
+                  onRestore={handleRestore}
                   onUpdate={handleUpdate}
                   onSelectChat={handleSelectChat}
                   onAddLink={handleAddLink}

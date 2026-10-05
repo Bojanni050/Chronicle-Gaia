@@ -107,6 +107,13 @@ export interface ChatEntry {
   capture?: CaptureData; // raw capture fields kept for (re)sending to Foundation
   foundation?: FoundationCaptureState; // delivery status of the capture step
   sourceFile?: SourceFileState; // state of the original file (blob) for this import
+  /**
+   * Removed from the active archive but kept in Chronicle (and in Gaia). Hiding
+   * is local; it never touches the Foundation observation. See
+   * Gaia-Documentation/capture-chronicle.md ("Deleting from the archive does
+   * not delete from Gaia").
+   */
+  archived?: boolean;
 }
 
 /**
@@ -144,6 +151,7 @@ export interface AppState {
   viewingChat: ChatEntry | null;
   settings: Settings;
   returnToMindMap: boolean;
+  showArchived: boolean;
 
   searchFilters: {
     sources: string[];

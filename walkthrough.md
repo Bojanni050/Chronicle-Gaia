@@ -237,3 +237,28 @@
     2 echte turns.
   - Validatie: 50 tests groen, `vite build` ok. Na parserwijziging
     `npm run build:parsers` gedraaid (CJS bijgewerkt).
+
+## 2026-10-05 (Archiveren in plaats van verwijderen)
+
+- Findings:
+  - De prullenbak-knop heette "Destroy Memory" / "Confirm Deletion", maar er was
+    **geen DELETE** in de app: `save-database` upsert alleen, dus de rij bleef in
+    Postgres staan en kwam na herstart terug. De knop loog in twee richtingen.
+  - Besluit (Bo, zie `capture-chronicle.md`): uit het archief halen mag; het blijft
+    in Chronicle én in Foundation. Foundation wordt niet aangeraakt.
+- Conclusions:
+  - Echt **archiveren**: een `archived`-vlag, standaard verborgen, terug te halen.
+    Geen enkele chat wordt meer uit de database verwijderd.
+  - Eerlijke UX: archief-icoon + "Move to Archive", bevestiging zegt expliciet dat
+    de chat bewaard blijft in Chronicle en Gaia.
+- Actions:
+  - `types.ts`: `ChatEntry.archived`, `AppState.showArchived`.
+  - `electron-main.js`: kolom `archived BOOLEAN` (+ ALTER voor bestaande DB's),
+    save/load-mapping.
+  - `App.tsx`: `handleArchive`/`handleRestore` (vervangen `handleDelete`);
+    `showArchived`-filter in `filteredChats`.
+  - `components/Sidebar.tsx`: "Show archived"-toggle in de quick filters.
+  - `components/ChatViewer.tsx`: archief-icoon/`Restore`, nieuwe bevestigingstekst;
+    inline `TrashIcon` weg.
+  - `components/Icons.tsx`: `ArchiveIcon` toegevoegd.
+  - Validatie: 50 tests groen, `vite build` ok, `node --check` ok.

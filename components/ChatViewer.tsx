@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef, Component } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatEntry, Settings, ItemType, Link } from '../types';
-import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, PencilIcon, SearchIcon, PlusIcon, BoltIcon } from './Icons';
+import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, PencilIcon, SearchIcon, PlusIcon, BoltIcon, ArchiveIcon } from './Icons';
 import { parseChatMessages, Message } from '../utils/chatUtils';
 import { ChatCard } from './ChatCard';
 import { cosineSimilarity } from '../utils/vectorUtils';
@@ -13,7 +13,8 @@ interface ChatViewerProps {
   allChats: ChatEntry[];
   allLinks: Link[];
   onClose: () => void;
-  onDelete: (id: string) => void;
+  onArchive: (id: string) => void;
+  onRestore?: (id: string) => void;
   onUpdate: (chat: ChatEntry) => void;
   onSelectChat: (chat: ChatEntry, fromMindMap?: boolean) => void;
   onAddLink: (fromId: string, toId: string, type?: string) => void;
@@ -43,12 +44,6 @@ const ImageGallery: React.FC<{ assets: string[] }> = ({ assets }) => (
 const EditIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-  </svg>
-);
-
-const TrashIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
 
@@ -158,10 +153,10 @@ const AIMessageContent: React.FC<{ message: Message; source: string }> = ({ mess
 );
 
 export const ChatViewer: React.FC<ChatViewerProps> = ({ 
-  chat, allChats, allLinks, onClose, onDelete, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [], onRetryCapture, onRetrySourceFile 
+  chat, allChats, allLinks, onClose, onArchive, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [], onRetryCapture, onRetrySourceFile, onRestore 
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [editTitle, setEditTitle] = useState(chat.title);
   const [editSummary, setEditSummary] = useState(chat.summary);
   const [editTags, setEditTags] = useState<string[]>(chat.tags);
@@ -180,7 +175,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
     setEditTags(chat.tags);
     setEditContent(chat.content);
     setIsEditing(false);
-    setShowDeleteConfirm(false);
+    setShowArchiveConfirm(false);
     if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
   }, [chat.id]);
 
@@ -204,14 +199,17 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-paper dark:bg-stone-950 relative">
-      {showDeleteConfirm && (
+      {showArchiveConfirm && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-stone-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="max-w-md w-full bg-white dark:bg-stone-900 rounded-[2.5rem] p-10 border-2 border-terracotta/20 shadow-2xl text-center space-y-8 animate-in zoom-in">
-            <h2 className="text-2xl font-black text-stone-900 dark:text-white uppercase tracking-tight">Destroy Memory?</h2>
-            <p className="text-moss-brown font-serif italic text-base leading-relaxed">Permanently excise <span className="text-earth-dark font-bold font-sans not-italic">"{chat.title}"</span>?</p>
+          <div className="max-w-md w-full bg-white dark:bg-stone-900 rounded-[2.5rem] p-10 border-2 border-sandstone/30 shadow-2xl text-center space-y-8 animate-in zoom-in">
+            <h2 className="text-2xl font-black text-stone-900 dark:text-white uppercase tracking-tight">Archive this chat?</h2>
+            <p className="text-moss-brown font-serif italic text-base leading-relaxed">
+              <span className="text-earth-dark font-bold font-sans not-italic">"{chat.title}"</span> wordt uit je actieve archief gehaald.
+              Hij blijft bewaard in Chronicle — en in Gaia. Je kunt hem terugzetten via <span className="not-italic font-bold">Show archived</span>.
+            </p>
             <div className="flex flex-col gap-3">
-              <button onClick={() => setShowDeleteConfirm(false)} className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-stone-800 text-moss-brown font-black text-[10px] uppercase tracking-widest border border-sandstone/20">Abort</button>
-              <button onClick={() => onDelete(chat.id)} className="w-full py-4 rounded-2xl bg-terracotta text-white font-black text-[10px] uppercase tracking-widest shadow-xl">Confirm Deletion</button>
+              <button onClick={() => setShowArchiveConfirm(false)} className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-stone-800 text-moss-brown font-black text-[10px] uppercase tracking-widest border border-sandstone/20">Cancel</button>
+              <button onClick={() => onArchive(chat.id)} className="w-full py-4 rounded-2xl bg-sage-green text-white font-black text-[10px] uppercase tracking-widest shadow-xl">Move to Archive</button>
             </div>
           </div>
         </div>
@@ -254,7 +252,11 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                        </button>
                      )}
                      <button onClick={() => setIsEditing(!isEditing)} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
-                     <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-terracotta hover:text-red-600 transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><TrashIcon /></button>
+                     {chat.archived ? (
+                       <button onClick={() => onRestore?.(chat.id)} title="Restore from archive" className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-sage-green hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20">Restore</button>
+                     ) : (
+                       <button onClick={() => setShowArchiveConfirm(true)} title="Move to archive" className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><ArchiveIcon /></button>
+                     )}
                 </div>
             </div>
 

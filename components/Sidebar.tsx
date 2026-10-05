@@ -22,6 +22,8 @@ interface SidebarProps {
   dateEnd: string;
   onDateRangeChange: (start: string, end: string) => void;
   activeRelatedTags?: string[];
+  showArchived: boolean;
+  onShowArchivedChange: (show: boolean) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -41,7 +43,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   dateStart,
   dateEnd,
   onDateRangeChange,
-  activeRelatedTags = []
+  activeRelatedTags = [],
+  showArchived,
+  onShowArchivedChange
 }) => {
   const [showQuickFilters, setShowQuickFilters] = useState(false);
 
@@ -183,8 +187,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 <div>
-                    <p className="text-[9px] font-black uppercase text-moss-brown tracking-widest mb-2">Time Horizon</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <p className="text-[9px] font-black uppercase text-moss-brown tracking-widest mb-2">Archive</p>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={showArchived}
+                        onChange={(e) => onShowArchivedChange(e.target.checked)}
+                        className="accent-sage-green"
+                      />
+                      <span className="text-[10px] font-bold text-earth-dark dark:text-stone-300">Show archived</span>
+                    </label>
+                </div>
+
+                <div>
+                    <p className="text-[9px] font-black uppercase text-moss-brown tracking-widest mb-2">Time Horizon</p>                    <div className="grid grid-cols-2 gap-2">
                         <input 
                             type="date" 
                             className="bg-white dark:bg-stone-900 border border-sandstone/20 rounded-lg p-1.5 text-[9px] font-bold outline-none focus:border-sage-green"
