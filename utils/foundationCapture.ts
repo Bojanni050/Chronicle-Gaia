@@ -25,6 +25,18 @@ export interface FoundationTurn {
 }
 
 /**
+ * An attachment already uploaded to Foundation, referenced on the chat. Only
+ * metadata crosses here — the bytes live in Foundation's attachment store.
+ */
+export interface FoundationAttachment {
+  id: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  url?: string;
+}
+
+/**
  * The raw, source-agnostic shape of one chat as it crosses into Foundation.
  * Everything here is either the chat itself or where it came from — nothing
  * about what we think of it.
@@ -36,6 +48,7 @@ export interface RawChatCapture {
   url?: string;
   occurredAt?: string;
   turns?: Array<{ role?: string; text: string }>;
+  attachments?: FoundationAttachment[];
 }
 
 export interface ChatIngestPayload {
@@ -46,6 +59,7 @@ export interface ChatIngestPayload {
   url?: string;
   occurredAt?: string;
   turns?: FoundationTurn[];
+  attachments?: FoundationAttachment[];
 }
 
 /** The `source` value Foundation records for chats delivered by Chronicle. */
@@ -149,6 +163,9 @@ export function buildChatIngestPayload(raw: RawChatCapture): ChatIngestPayload {
   const turns = normalizeTurns(raw.turns);
   if (turns.length) payload.turns = turns;
 
+  const attachments = normalizeAttachments(raw.attachments);
+  if (attachments.length) payload.attachments = attachments;
+
   // Belt-and-braces: a forbidden key can never survive construction, but if a
   // future edit ever spreads raw fields in, this makes the violation loud.
   for (const key of Object.keys(payload)) {
@@ -158,6 +175,25 @@ export function buildChatIngestPayload(raw: RawChatCapture): ChatIngestPayload {
   }
 
   return payload;
+}
+
+function normalizeAttachments(attachments: RawChatCapture['attachments']): FoundationAttachment[] {
+  if (!Array.isArray(attachments)) return [];
+  const out: FoundationAttachment[] = [];
+  for (const att of attachments) {
+    const id = clean(att && att.id);
+    if (!id) continue; // Foundation requires an id on every attachment
+    const entry: FoundationAttachment = { id };
+    const filename = clean(att.filename);
+    if (filename) entry.filename = filename;
+    const mimeType = clean(att.mimeType);
+    if (mimeType) entry.mimeType = mimeType;
+    if (typeof att.size === 'number' && Number.isFinite(att.size)) entry.size = att.size;
+    const url = clean(att.url);
+    if (url) entry.url = url;
+    out.push(entry);
+  }
+  return out;
 }
 
 /**

@@ -92,6 +92,38 @@ describe('parseChatGPTConversation (mapping tree)', () => {
     expect(parseChatGPTConversation(root)!.url).toBeUndefined();
   });
 
+  it('extracts images from message parts, keeping data URLs and pointers', () => {
+    const withImages = {
+      title: 'Beeld',
+      mapping: {
+        u: {
+          id: 'u', parent: null, children: [],
+          message: {
+            author: { role: 'user' },
+            content: {
+              parts: [
+                'kijk hier',
+                { content_type: 'image_asset_pointer', asset_pointer: 'data:image/png;base64,AAAA' },
+                { content_type: 'image_asset_pointer', asset_pointer: 'file-service://file-abc', metadata: { file_name: 'foto.png' } },
+                { unrelated: true },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const parsed = parseChatGPTConversation(withImages)!;
+    expect(parsed.images).toHaveLength(2);
+    expect(parsed.images![0].dataUrl).toBe('data:image/png;base64,AAAA');
+    expect(parsed.images![0].mimeType).toBe('image/png');
+    expect(parsed.images![1].sourceUrl).toBe('file-service://file-abc');
+    expect(parsed.images![1].filename).toBe('foto.png');
+  });
+
+  it('omits the images key when a conversation has none', () => {
+    expect(parseChatGPTConversation(root)!.images).toBeUndefined();
+  });
+
   it('does not loop on a cyclic parent reference', () => {
     const cyclic = {
       title: 'Cycle',

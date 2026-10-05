@@ -8,7 +8,7 @@ import {
   CHRONICLE_CAPTURE_SOURCE,
 } from './foundationCapture';
 
-const ALLOWED_KEYS = ['content', 'source', 'title', 'sourceProvider', 'url', 'occurredAt', 'turns'];
+const ALLOWED_KEYS = ['content', 'source', 'title', 'sourceProvider', 'url', 'occurredAt', 'turns', 'attachments'];
 const FORBIDDEN_KEYS = [
   'status',
   'providerConversationId',
@@ -104,6 +104,25 @@ describe('buildChatIngestPayload', () => {
   it('keeps a valid ISO timestamp', () => {
     const iso = '2026-10-04T12:00:00.000Z';
     expect(buildChatIngestPayload({ content: 'x', occurredAt: iso }).occurredAt).toBe(iso);
+  });
+
+  it('carries attachment metadata (id required, extras optional)', () => {
+    const payload = buildChatIngestPayload({
+      content: 'x',
+      attachments: [
+        { id: 'abc123', filename: 'foto.png', mimeType: 'image/png', size: 2048, url: '/api/attachments/abc123/foto.png' },
+        { id: 'def456' },
+      ],
+    });
+    expect(payload.attachments).toEqual([
+      { id: 'abc123', filename: 'foto.png', mimeType: 'image/png', size: 2048, url: '/api/attachments/abc123/foto.png' },
+      { id: 'def456' },
+    ]);
+  });
+
+  it('drops attachments without an id and omits the key when none remain', () => {
+    expect(buildChatIngestPayload({ content: 'x', attachments: [{ filename: 'zonder-id.png' }] }).attachments).toBeUndefined();
+    expect(buildChatIngestPayload({ content: 'x', attachments: [] }).attachments).toBeUndefined();
   });
 });
 

@@ -147,3 +147,34 @@
     not sent" + Retry file.
   - Validatie: 39 tests groen, `vite build` ok, `node --check` ok. Live blob-
     upload tegen de VPS bewezen (sha256 identiek, idempotent).
+
+## 2026-10-05 (Foto's als attachments aan de chat gekoppeld)
+
+- Findings:
+  - Besluit (gebruiker): alleen foto's die in **dezelfde bron** zitten worden aan
+    de chat gekoppeld — geen verzonnen paren.
+  - Bevinding op de server: `POST /api/attachments` gaf 400 op binaire bodies —
+    de globale `express.json` probeerde ze als JSON te parsen (dezelfde bug als
+    eerder bij `/api/source-files`). De attachment-route was dus stuk sinds die
+    parser er is.
+- Conclusions:
+  - De payload-kant (`buildChatIngestPayload`) draagt nu `attachments`
+    (metadata, id verplicht); Foundation's `chat`-contract staat het al toe.
+  - Extractie is per bron en verzon niets: ChatGPT's `mapping` levert inline
+    data-URLs (bytes) én pointers (url); Claude's export noemt binaire
+    attachments alleen bij naam en bevat geen bytes — die worden niet geüpload.
+  - Volgorde: bronbestand → foto's uploaden → chat met attachment-referenties.
+- Actions:
+  - Foundation: `express.json` skipt nu ook `/api/attachments` (naast
+    `/api/source-files`); attachment-upload live bewezen (201, bestand op schijf,
+    referentie op de observatie).
+  - Chronicle: `utils/foundationCapture.ts` (+ `attachments` in payload/tests);
+    `utils/sourceParsers.ts` (`ParsedImage`, ChatGPT image-extractie uit parts,
+    Claude naam-only); `electron-main.js` (`foundation-upload-attachment`, pad
+    óf dataUrl); `electron-preload.js`; `types.ts` (`CaptureData.attachments`);
+    `UploadModal.tsx` (`AttachmentRef`, per gesprek); `App.tsx`
+    (`captureToFoundation` uploadt refs vóór de chat).
+  - Live bewezen: attachment `bc1f17b8…` geüpload, chat `78213c77…` met die
+    referentie → `attachments` op de observatie, bytes op schijf. Daarna
+    opgeruimd (trigger terug op `O`).
+  - Validatie: 43 tests groen, `vite build` ok, `node --check` ok.

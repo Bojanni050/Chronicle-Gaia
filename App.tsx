@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
 import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon } from './components/Icons';
-import { UploadModal, SourceFileRef } from './components/UploadModal';
+import { UploadModal, SourceFileRef, AttachmentRef } from './components/UploadModal';
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
@@ -47,6 +47,12 @@ declare global {
         ingestObjectId?: string;
         reused?: boolean;
         mirrored?: boolean;
+        error?: string;
+      }>;
+      uploadAttachmentToFoundation: (file: { path?: string; dataUrl?: string; filename: string; mimeType: string }) => Promise<{
+        ok: boolean;
+        status?: number;
+        attachment?: { id: string; filename?: string; mimeType?: string; size?: number; url?: string };
         error?: string;
       }>;
       getPathForFile: (file: File) => string;
@@ -230,20 +236,44 @@ const App: React.FC = () => {
     }
   };
 
+  const setCapture = (id: string, capture: CaptureData) => {
+    setState(prev => ({
+      ...prev,
+      chats: prev.chats.map(c => (c.id === id ? { ...c, capture } : c)),
+      viewingChat: prev.viewingChat?.id === id ? { ...prev.viewingChat, capture } : prev.viewingChat,
+    }));
+  };
+
   // Sends one chat's raw capture to Foundation and records the delivery status
   // on the entry. Never throws: a failure here becomes a retryable state, it
   // can never undo the archive write that already happened.
-  const captureToFoundation = async (chat: ChatEntry) => {
+  const captureToFoundation = async (chat: ChatEntry, attachmentRefs: AttachmentRef[] = []) => {
     if (!chat.capture || !window.electronAPI?.captureChatToFoundation) return;
+
+    // First upload the images that belong to this conversation (same source
+    // only), so the chat payload can reference them. A failed image is dropped,
+    // never blocking the chat itself.
+    let capture = chat.capture;
+    if (attachmentRefs.length && window.electronAPI?.uploadAttachmentToFoundation) {
+      const uploaded: NonNullable<CaptureData['attachments']> = [];
+      for (const ref of attachmentRefs) {
+        const up = await window.electronAPI.uploadAttachmentToFoundation(ref);
+        if (up.ok && up.attachment?.id) uploaded.push(up.attachment);
+      }
+      capture = { ...capture, attachments: uploaded };
+      setCapture(chat.id, capture);
+    }
+
     let payload;
     try {
       payload = buildChatIngestPayload({
         content: chat.content,
         title: chat.title,
-        sourceProvider: chat.capture.sourceProvider,
-        url: chat.capture.url,
-        occurredAt: chat.capture.occurredAt,
-        turns: chat.capture.turns,
+        sourceProvider: capture.sourceProvider,
+        url: capture.url,
+        occurredAt: capture.occurredAt,
+        turns: capture.turns,
+        attachments: capture.attachments,
       });
     } catch (err: any) {
       setFoundationState(chat.id, { status: 'failed', error: err?.message || 'invalid capture payload', at: Date.now() });
@@ -266,7 +296,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef) => {
+  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef, attachmentRefs?: AttachmentRef[]) => {
     const now = Date.now();
     const newChat: ChatEntry = {
       id: Math.random().toString(36).substr(2, 9),
@@ -281,9 +311,10 @@ const App: React.FC = () => {
     };
     // Archive first. Persistence of the entry never waits on the capture steps.
     setState(prev => ({ ...prev, chats: [newChat, ...prev.chats], isUploading: false, viewingChat: newChat, viewMode: 'archive' }));
-    // Then, in order: the original file (the proof), then the raw chat.
+    // Then, in order: the original file (the proof), then the raw chat with any
+    // images that belong to it.
     if (sourceFileRef) void captureSourceFile(newChat, sourceFileRef);
-    if (capture) void captureToFoundation(newChat);
+    if (capture) void captureToFoundation(newChat, attachmentRefs);
   };
 
   const handleRetryCapture = (chat: ChatEntry) => {

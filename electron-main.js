@@ -516,6 +516,51 @@ ipcMain.handle('foundation-capture-source-file', async (event, { path: filePath,
   }
 });
 
+// Uploads one attachment (an image that is part of a conversation) to
+// Foundation's attachment store and returns its metadata, which the chat
+// payload then references. The bytes live in Foundation; the chat only carries
+// the reference. Never throws.
+ipcMain.handle('foundation-upload-attachment', async (event, { path: filePath, dataUrl, filename, mimeType } = {}) => {
+  let bytes;
+  let resolvedMime = mimeType;
+  if (dataUrl) {
+    // Bytes carried inline by the export (a data URL), no file on disk.
+    const match = String(dataUrl).match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (!match) return { ok: false, error: 'invalid data URL' };
+    bytes = Buffer.from(match[3], match[2] ? 'base64' : 'utf8');
+    resolvedMime = resolvedMime || match[1] || 'application/octet-stream';
+  } else if (filePath) {
+    try {
+      bytes = fs.readFileSync(filePath);
+    } catch (err) {
+      return { ok: false, error: `cannot read attachment: ${err.message}` };
+    }
+  } else {
+    return { ok: false, error: 'no attachment path or data given' };
+  }
+  const { url, token } = resolveFoundationConfig();
+  if (!token) return { ok: false, error: 'no Foundation token found' };
+  try {
+    const response = await fetch(`${url}/api/attachments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': resolvedMime || 'application/octet-stream',
+        Authorization: `Bearer ${token}`,
+        'X-Attachment-Filename': encodeURIComponent(filename || (filePath ? path.basename(filePath) : 'attachment')),
+      },
+      body: bytes,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: body.error || `upload failed (${response.status})` };
+    }
+    return { ok: true, status: response.status, attachment: body };
+  } catch (err) {
+    console.error('[Chronicle] Attachment upload error:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
 function capitalize(value) {
   if (!value) return 'Other';
   return value.charAt(0).toUpperCase() + value.slice(1);

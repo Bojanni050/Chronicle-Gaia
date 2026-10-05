@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadLinks: () => ipcRenderer.invoke('load-links'),
   captureChatToFoundation: (payload) => ipcRenderer.invoke('foundation-capture-chat', payload),
   captureSourceFileToFoundation: (file) => ipcRenderer.invoke('foundation-capture-source-file', file),
+  uploadAttachmentToFoundation: (file) => ipcRenderer.invoke('foundation-upload-attachment', file),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   exportChats: (chats, format) => ipcRenderer.invoke('export-chats', { chats, format }),
   importChats: (existingIds) => ipcRenderer.invoke('import-chats', existingIds),

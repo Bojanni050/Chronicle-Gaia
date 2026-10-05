@@ -21,6 +21,16 @@ export interface ParsedTurn {
   text: string;
 }
 
+export interface ParsedImage {
+  /** Filename hint derived from the export, if any. */
+  filename: string;
+  mimeType: string;
+  /** Data URL (data:<mime>;base64,<b64>) when the export carries the bytes. */
+  dataUrl?: string;
+  /** Remote source URL when the export only references one. */
+  sourceUrl?: string;
+}
+
 export interface ParsedConversation {
   content: string;
   turns: ParsedTurn[];
@@ -31,6 +41,8 @@ export interface ParsedConversation {
   createdAt?: number;
   /** Last activity time (ms) — used as occurredAt. */
   occurredAt?: number;
+  /** Images that are part of this conversation (same source, not invented). */
+  images?: ParsedImage[];
 }
 
 function parseTime(value: unknown): number | undefined {
@@ -92,6 +104,15 @@ export function parseClaudeConversation(conv: any): ParsedConversation | null {
   const turns = claudeTurns(Array.isArray(conv?.chat_messages) ? conv.chat_messages : []);
   if (!turns.length) return null;
   const uuid = typeof conv?.uuid === 'string' ? conv.uuid : undefined;
+  // Claude's export names binary attachments but does not include their bytes
+  // (confirmed: only text-shaped files carry extracted_content). We record the
+  // names so it is visible something was attached — nothing invented.
+  const images: ParsedImage[] = [];
+  for (const msg of conv?.chat_messages || []) {
+    for (const f of msg?.files || []) {
+      images.push({ filename: f?.file_name || 'file', mimeType: 'application/octet-stream' });
+    }
+  }
   return {
     content: formatTurns(turns),
     turns,
@@ -100,6 +121,7 @@ export function parseClaudeConversation(conv: any): ParsedConversation | null {
     sourceProvider: 'claude',
     createdAt: parseTime(conv?.created_at),
     occurredAt: parseTime(conv?.updated_at) ?? parseTime(conv?.created_at),
+    ...(images.length ? { images } : {}),
   };
 }
 
@@ -133,6 +155,30 @@ function chatgptMessageText(msg: any): string {
   return '';
 }
 
+const DATA_URL_RE = /^data:([^;,]+)(;base64)?,(.*)$/;
+
+// Extracts image references from a ChatGPT message's content parts. The export
+// can carry bytes inline (data URL) or only a pointer/URL — we keep both, and
+// never invent an image that is not literally in the message.
+function chatgptMessageImages(msg: any, index: number): ParsedImage[] {
+  const parts = msg?.content?.parts;
+  if (!Array.isArray(parts)) return [];
+  const images: ParsedImage[] = [];
+  parts.forEach((part: any, i: number) => {
+    if (!part || typeof part !== 'object') return;
+    const pointer = part.asset_pointer || part.url || part.image_url?.url;
+    if (typeof pointer !== 'string') return;
+    const match = pointer.match(DATA_URL_RE);
+    const filename = part.metadata?.file_name || `image-${index}-${i + 1}`;
+    if (match) {
+      images.push({ filename, mimeType: match[1] || 'image/png', dataUrl: pointer });
+    } else {
+      images.push({ filename, mimeType: 'image/png', sourceUrl: pointer });
+    }
+  });
+  return images;
+}
+
 function chatgptTurns(orderedMessages: any[]): ParsedTurn[] {
   const turns: ParsedTurn[] = [];
   for (const msg of orderedMessages) {
@@ -152,6 +198,8 @@ export function parseChatGPTConversation(root: any): ParsedConversation | null {
   if (!turns.length) return null;
   const firstMessageTime = ordered.find((m: any) => m?.create_time)?.create_time;
   const occurredAt = parseTime(root?.update_time) ?? parseTime(firstMessageTime);
+  const images: ParsedImage[] = [];
+  ordered.forEach((m: any, index: number) => images.push(...chatgptMessageImages(m, index)));
   return {
     content: formatTurns(turns),
     turns,
@@ -159,6 +207,7 @@ export function parseChatGPTConversation(root: any): ParsedConversation | null {
     sourceProvider: 'chatgpt',
     createdAt: parseTime(root?.create_time) ?? parseTime(firstMessageTime),
     occurredAt,
+    ...(images.length ? { images } : {}),
   };
 }
 

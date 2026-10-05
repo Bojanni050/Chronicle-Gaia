@@ -8,7 +8,7 @@ import { parseConversationJson, parseClaudeExport, ParsedConversation } from '..
 
 interface UploadModalProps {
   onClose: () => void;
-  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFile?: SourceFileRef) => void;
+  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFile?: SourceFileRef, attachmentRefs?: AttachmentRef[]) => void;
   settings: Settings;
 }
 
@@ -23,12 +23,24 @@ export interface SourceFileRef {
   mimeType: string;
 }
 
+/**
+ * An image that belongs to a conversation, ready to upload. Either a path (a
+ * file on disk) or inline bytes (a data URL carried by the export itself).
+ */
+export interface AttachmentRef {
+  path?: string;
+  dataUrl?: string;
+  filename: string;
+  mimeType: string;
+}
+
 interface ProcessResult {
   fileName: string;
   success: boolean;
   error?: string;
   isImage?: boolean;
   sourceFile?: SourceFileRef;
+  attachmentRefs?: AttachmentRef[];
   data?: {
     content: string;
     title: string;
@@ -97,9 +109,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
   ): Promise<ProcessResult> => {
     const metadata = await enrichContent(conv.content, settings, fileName);
     const vector = await safeEmbedding(conv.content + "\n" + metadata.summary, settings);
+    // Images that are literally part of this conversation. Only those carrying
+    // bytes (inline data URLs) can be uploaded; name-only references (Claude's
+    // binary attachments) are not invented into attachments.
+    const attachmentRefs: AttachmentRef[] = (conv.images || [])
+      .filter((img) => img.dataUrl)
+      .map((img) => ({ dataUrl: img.dataUrl, filename: img.filename, mimeType: img.mimeType }));
     return {
       fileName,
       success: true,
+      attachmentRefs,
       data: {
         content: conv.content,
         title: conv.title || metadata.suggestedTitle,
@@ -258,7 +277,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           res.data.embedding,
           res.data.assets,
           capture,
-          res.sourceFile
+          res.sourceFile,
+          res.attachmentRefs
         );
       }
     });
