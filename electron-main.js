@@ -312,6 +312,7 @@ ipcMain.handle('export-chats', async (event, { chats, format }) => {
 });
 
 ipcMain.handle('import-chats', async (event, existingIds) => {
+  const { parseConversationJson, parseClaudeExport } = require('./utils/sourceParsers.cjs');
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
@@ -326,38 +327,53 @@ ipcMain.handle('import-chats', async (event, existingIds) => {
     for (const filePath of result.filePaths) {
       const fileName = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
-      let content = fs.readFileSync(filePath, 'utf-8');
-      let title = fileName.replace(/\.[^.]+$/, '');
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      // A file may hold one conversation or many (a Claude export holds all).
+      let parsed = [];
       if (ext === '.json') {
         try {
-          const parsed = JSON.parse(content);
-          content = jsonToTranscript(parsed);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.title) {
-            title = parsed.title;
-          }
+          const json = JSON.parse(content);
+          const claude = parseClaudeExport(json);
+          parsed = claude.length > 0 ? claude : [parseConversationJson(json)].filter(Boolean);
         } catch {
-          content = content;
+          parsed = [];
         }
       }
-      const id = `import-${Buffer.from(fileName).toString('base64').slice(0, 16)}`;
-      if (existing.has(id)) {
-        skipped++;
-        continue;
+      if (parsed.length === 0) {
+        parsed = [{ content, turns: [], title: fileName.replace(/\.[^.]+$/, ''), sourceProvider: guessSource(fileName, content).toLowerCase() }];
       }
-      chats.push({
-        id,
-        type: 'chat',
-        title,
-        content,
-        summary: '',
-        tags: ['imported'],
-        source: guessSource(fileName, content),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        fileName,
-        embedding: undefined,
-        assets: []
-      });
+
+      let index = 1;
+      for (const conv of parsed) {
+        const label = parsed.length > 1 ? `${fileName} (${index})` : fileName;
+        const id = `import-${Buffer.from(label).toString('base64').slice(0, 24)}`;
+        index++;
+        if (existing.has(id)) {
+          skipped++;
+          continue;
+        }
+        chats.push({
+          id,
+          type: 'chat',
+          title: conv.title || fileName.replace(/\.[^.]+$/, ''),
+          content: conv.content,
+          summary: '',
+          tags: ['imported'],
+          source: conv.sourceProvider ? capitalize(conv.sourceProvider) : guessSource(fileName, content),
+          createdAt: conv.createdAt || Date.now(),
+          updatedAt: conv.occurredAt || conv.createdAt || Date.now(),
+          fileName: label,
+          embedding: undefined,
+          assets: [],
+          capture: {
+            sourceProvider: conv.sourceProvider || guessSource(fileName, content).toLowerCase(),
+            ...(conv.url ? { url: conv.url } : {}),
+            ...(conv.occurredAt ? { occurredAt: new Date(conv.occurredAt).toISOString() } : {}),
+            ...(conv.turns && conv.turns.length ? { turns: conv.turns } : {}),
+          },
+        });
+      }
     }
     return { success: true, chats, skipped };
   } catch (err) {
@@ -411,46 +427,9 @@ ipcMain.handle('foundation-capture-chat', async (event, payload) => {
   }
 });
 
-function jsonToTranscript(json) {
-  let messages = [];
-  if (Array.isArray(json)) {
-    messages = json;
-  } else if (json && typeof json === 'object') {
-    if (Array.isArray(json.messages)) messages = json.messages;
-    else if (Array.isArray(json.history)) messages = json.history;
-    else if (Array.isArray(json.conversation)) messages = json.conversation;
-    else if (Array.isArray(json.mapping)) {
-      const nodes = Object.values(json.mapping);
-      const byId = new Map(nodes.map(n => [n.id, n]));
-      const roots = nodes.filter(n => !n.parent || !byId.has(n.parent));
-      const ordered = [];
-      const walk = (node) => {
-        if (!node) return;
-        if (node.message) ordered.push(node.message);
-        (node.children || []).forEach(childId => walk(byId.get(childId)));
-      };
-      roots.forEach(walk);
-      messages = ordered.map(m => ({
-        role: m.author && m.author.role,
-        content: m.content && m.content.parts ? m.content.parts.join('\n') : (m.content && m.content.text) || ''
-      }));
-    }
-  }
-  if (messages.length === 0) return '';
-  return messages.map(msg => {
-    const role = msg.role || msg.from || (msg.type === 'human' ? 'user' : 'model');
-    const content = msg.content || msg.value || msg.text || (msg.content && msg.content.parts ? msg.content.parts.join('\n') : '') || '';
-    let displayName = 'User';
-    const lowerRole = String(role).toLowerCase();
-    if (['user', 'human'].includes(lowerRole)) {
-      displayName = 'User';
-    } else if (['assistant', 'model', 'bot', 'gpt', 'system'].includes(lowerRole)) {
-      displayName = lowerRole === 'system' ? 'System' : 'Assistant';
-    } else {
-      displayName = role ? String(role).charAt(0).toUpperCase() + String(role).slice(1) : 'Assistant';
-    }
-    return `${displayName}: ${content}`;
-  }).filter(l => l.trim().length > 0).join('\n\n');
+function capitalize(value) {
+  if (!value) return 'Other';
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function guessSource(fileName, content) {

@@ -3,8 +3,8 @@ import React, { useState, useRef } from 'react';
 import { SourceType, Settings, ItemType, CaptureData, CaptureTurn } from '../types';
 import { XIcon, FileIcon, RefreshIcon, BoltIcon, PlusIcon } from './Icons';
 import { analyzeContent, generateEmbedding, ChatMetadata } from '../services/geminiService';
-import { convertJsonToTranscript } from '../utils/chatUtils';
 import { turnsFromTranscript, toSourceProvider } from '../utils/foundationCapture';
+import { parseConversationJson, parseClaudeExport, ParsedConversation } from '../utils/sourceParsers';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -25,6 +25,9 @@ interface ProcessResult {
     embedding?: number[];
     assets?: string[];
     turns?: CaptureTurn[];
+    url?: string;
+    occurredAt?: string;
+    sourceProvider?: string;
   };
 }
 
@@ -73,7 +76,35 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
   const [results, setResults] = useState<ProcessResult[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const processFile = async (file: File): Promise<ProcessResult> => {
+  // Turns an already-parsed conversation (from an export shape) into a review
+  // result. Enrichment is best-effort; the raw capture fields ride along.
+  const resultFromConversation = async (
+    fileName: string,
+    conv: ParsedConversation,
+    provider: string,
+  ): Promise<ProcessResult> => {
+    const metadata = await enrichContent(conv.content, settings, fileName);
+    const vector = await safeEmbedding(conv.content + "\n" + metadata.summary, settings);
+    return {
+      fileName,
+      success: true,
+      data: {
+        content: conv.content,
+        title: conv.title || metadata.suggestedTitle,
+        summary: metadata.summary,
+        tags: metadata.tags,
+        embedding: vector,
+        turns: conv.turns,
+        url: conv.url,
+        occurredAt: conv.occurredAt ? new Date(conv.occurredAt).toISOString() : undefined,
+        sourceProvider: conv.sourceProvider || provider,
+      },
+    };
+  };
+
+  // One file can hold one conversation or many (a Claude export holds all of
+  // them). Each conversation becomes its own archive entry and capture.
+  const processFile = async (file: File): Promise<ProcessResult[]> => {
     const isImage = file.type.startsWith('image/');
     const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
@@ -91,7 +122,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
         const metadata = await enrichContent(base64, settings, file.name, file.type);
         const vector = await safeEmbedding(metadata.summary + " " + metadata.suggestedTitle, settings);
 
-        return {
+        return [{
           fileName: file.name,
           success: true,
           isImage: true,
@@ -103,39 +134,55 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
             embedding: vector,
             assets: [`data:${file.type};base64,${base64}`]
           }
-        };
-      } else {
-        const text = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsText(file);
-        });
-
-        let finalContent = text;
-        if (extension === '.json') {
-          const transcript = convertJsonToTranscript(JSON.parse(text));
-          if (!transcript) throw new Error("Invalid chat structure");
-          finalContent = transcript;
-        }
-
-        const metadata = await enrichContent(finalContent, settings, file.name);
-        const vector = await safeEmbedding(finalContent + "\n" + metadata.summary, settings);
-
-        return {
-          fileName: file.name,
-          success: true,
-          data: {
-            content: finalContent,
-            title: metadata.suggestedTitle,
-            summary: metadata.summary,
-            tags: metadata.tags,
-            embedding: vector,
-            turns: turnsFromTranscript(finalContent)
-          }
-        };
+        }];
       }
+
+      const text = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsText(file);
+      });
+
+      // A JSON export: parse its real structure for turns/url/provider.
+      if (extension === '.json') {
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error('Invalid JSON');
+        }
+        const claude = parseClaudeExport(json);
+        const parsed = claude.length > 0 ? claude.map((c) => [file.name, c] as const) : [[file.name, parseConversationJson(json)] as const];
+        const results: ProcessResult[] = [];
+        let index = 1;
+        for (const [name, conv] of parsed) {
+          if (!conv) continue;
+          const label = parsed.length > 1 ? `${name} (${index})` : name;
+          results.push(await resultFromConversation(label, conv, toSourceProvider(source) || 'other'));
+          index++;
+        }
+        if (results.length === 0) throw new Error('Invalid chat structure');
+        return results;
+      }
+
+      // Plain text / markdown: split into turns from the transcript.
+      const finalContent = text;
+      const metadata = await enrichContent(finalContent, settings, file.name);
+      const vector = await safeEmbedding(finalContent + "\n" + metadata.summary, settings);
+      return [{
+        fileName: file.name,
+        success: true,
+        data: {
+          content: finalContent,
+          title: metadata.suggestedTitle,
+          summary: metadata.summary,
+          tags: metadata.tags,
+          embedding: vector,
+          turns: turnsFromTranscript(finalContent)
+        }
+      }];
     } catch (err: any) {
-      return { fileName: file.name, success: false, error: err.message || "Processing failed" };
+      return [{ fileName: file.name, success: false, error: err.message || "Processing failed" }];
     }
   };
 
@@ -152,7 +199,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
     for (let i = 0; i < fileArray.length; i++) {
       setProcessingProgress({ current: i + 1, total: fileArray.length });
       const res = await processFile(fileArray[i]);
-      processedResults.push(res);
+      processedResults.push(...res);
     }
 
     setResults(processedResults);
@@ -168,7 +215,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
         const capture: CaptureData | undefined = res.isImage
           ? undefined
           : {
-              sourceProvider: toSourceProvider(source),
+              sourceProvider: res.data.sourceProvider || toSourceProvider(source),
+              ...(res.data.url ? { url: res.data.url } : {}),
+              ...(res.data.occurredAt ? { occurredAt: res.data.occurredAt } : {}),
               ...(res.data.turns && res.data.turns.length ? { turns: res.data.turns } : {}),
             };
         onUpload(

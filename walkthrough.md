@@ -83,3 +83,37 @@
   - `ChatViewer.tsx`: status-pil (Captured to Gaia / Sending… / Not sent) + Retry.
   - Validatie: 24 tests groen, `vite build` ok, `node --check` ok. App-niveau
     end-to-end nog niet gedraaid (vereist lokale Postgres + GUI).
+
+## 2026-10-05 (Capture-verbinding, fase 3 — ruwe vorm per bron)
+
+- Findings:
+  - Chronicle had twee parsers: `utils/chatUtils.convertJsonToTranscript` in de
+    renderer (kent `messages`/`history`/`conversation`, geen echte url) en een
+    oudere `jsonToTranscript` in `electron-main.js` (kende wél de ChatGPT
+    `mapping`-boom). Beide gaven alleen platte tekst terug: geen `turns`, geen
+    `url`, geen `occurredAt` — dus geen dedup per bron.
+  - `Chronicle Docs/ChatGPT-importer-review-...md` (juli) beschrijft precies de
+    juiste aanpak: rendert op gestructureerde `turns`, provider-idempotency op
+    `(sourceProvider, providerConversationId)`.
+- Conclusions:
+  - Eén gedeelde, pure parser-module als bron van waarheid; de main-process-versie
+    wordt eruit afgeleid (via esbuild) in plaats van gedupliceerd. Dedup werkt
+    nu waar de bron een stabiele id heeft (Claude-export: `uuid` → url); ChatGPT
+    blijft bewust url-loos tot de scraper-run (fase 5-vervolg).
+  - Export-parsers splitsen een bestand in één of meerdere gesprekken (een
+    Claude-export bevat álle gesprekken).
+- Actions:
+  - Nieuw `utils/sourceParsers.ts` (+ `.test.ts`, 15 tests): `parseClaudeConversation`,
+    `parseClaudeExport`, `parseChatGPTConversation` (mapping, cycle-guard,
+    systeem-berichten overgeslagen), generieke dispatcher `parseConversationJson`.
+  - Nieuw `scripts/build-source-parsers.js` (esbuild → `utils/sourceParsers.cjs`,
+    gitignored) + npm-script `build:parsers` in `postinstall`.
+  - `UploadModal.tsx`: JSON-import gebruikt de parsers; per gesprek een result;
+    `url`/`occurredAt`/`sourceProvider` gaan mee in `capture`.
+  - `electron-main.js`: `import-chats` hergebruikt de gedeelde parsers, oude
+    `jsonToTranscript` verwijderd; import-entries krijgen `capture`.
+  - Live tegen de server bewezen: Claude-export → `url https://claude.ai/chat/…`
+    → eerste POST `201`/`insertedNew:true`, tweede `200`/`insertedNew:false`,
+    zelfde `providerConversationId claude:…`. Test-observatie daarna opgeruimd
+    (episode + gateway-rij, trigger terug op `O`).
+  - Validatie: 39 tests groen, `vite build` ok, `node --check` ok.
