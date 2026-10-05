@@ -1,13 +1,14 @@
 
 import React, { useState, useRef } from 'react';
-import { SourceType, Settings, ItemType } from '../types';
+import { SourceType, Settings, ItemType, CaptureData, CaptureTurn } from '../types';
 import { XIcon, FileIcon, RefreshIcon, BoltIcon, PlusIcon } from './Icons';
-import { analyzeContent, generateEmbedding } from '../services/geminiService';
+import { analyzeContent, generateEmbedding, ChatMetadata } from '../services/geminiService';
 import { convertJsonToTranscript } from '../utils/chatUtils';
+import { turnsFromTranscript, toSourceProvider } from '../utils/foundationCapture';
 
 interface UploadModalProps {
   onClose: () => void;
-  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[]) => void;
+  onUpload: (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData) => void;
   settings: Settings;
 }
 
@@ -23,8 +24,44 @@ interface ProcessResult {
     tags: string[];
     embedding?: number[];
     assets?: string[];
+    turns?: CaptureTurn[];
   };
 }
+
+// Enrichment (AI summary/tags/embedding) is best-effort: it feeds the archive's
+// derived layer, and a failing Gemini call must never block the archive write
+// or the capture step that follows it. On failure we archive without it.
+const fallbackMetadata = (content: string, fileName: string): ChatMetadata => ({
+  summary: '',
+  tags: [],
+  suggestedTitle:
+    fileName.replace(/\.[^.]+$/, '') ||
+    content.split('\n').find((line) => line.trim())?.slice(0, 80) ||
+    'Untitled',
+});
+
+const enrichContent = async (
+  content: string,
+  settings: Settings,
+  fileName: string,
+  imageMimeType?: string,
+): Promise<ChatMetadata> => {
+  try {
+    return await analyzeContent(content, settings, imageMimeType);
+  } catch (err) {
+    console.warn('[Chronicle] Enrichment failed; archiving without AI metadata:', err);
+    return fallbackMetadata(content, fileName);
+  }
+};
+
+const safeEmbedding = async (text: string, settings: Settings): Promise<number[] | undefined> => {
+  try {
+    return await generateEmbedding(text, settings);
+  } catch (err) {
+    console.warn('[Chronicle] Embedding failed; continuing without it:', err);
+    return undefined;
+  }
+};
 
 type ModalStep = 'upload' | 'review';
 
@@ -51,8 +88,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           reader.readAsDataURL(file);
         });
 
-        const metadata = await analyzeContent(base64, settings, file.type);
-        const vector = await generateEmbedding(metadata.summary + " " + metadata.suggestedTitle, settings);
+        const metadata = await enrichContent(base64, settings, file.name, file.type);
+        const vector = await safeEmbedding(metadata.summary + " " + metadata.suggestedTitle, settings);
 
         return {
           fileName: file.name,
@@ -81,8 +118,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           finalContent = transcript;
         }
 
-        const metadata = await analyzeContent(finalContent, settings);
-        const vector = await generateEmbedding(finalContent + "\n" + metadata.summary, settings);
+        const metadata = await enrichContent(finalContent, settings, file.name);
+        const vector = await safeEmbedding(finalContent + "\n" + metadata.summary, settings);
 
         return {
           fileName: file.name,
@@ -92,7 +129,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
             title: metadata.suggestedTitle,
             summary: metadata.summary,
             tags: metadata.tags,
-            embedding: vector
+            embedding: vector,
+            turns: turnsFromTranscript(finalContent)
           }
         };
       }
@@ -125,6 +163,14 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
   const handleFinalize = () => {
     results.forEach(res => {
       if (res.success && res.data) {
+        // Only chats are captured to Foundation. An imported image is a visual
+        // asset, not a chat; it stays in the archive.
+        const capture: CaptureData | undefined = res.isImage
+          ? undefined
+          : {
+              sourceProvider: toSourceProvider(source),
+              ...(res.data.turns && res.data.turns.length ? { turns: res.data.turns } : {}),
+            };
         onUpload(
           res.data.content, 
           source, 
@@ -133,7 +179,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
           res.data.tags, 
           res.fileName, 
           res.data.embedding,
-          res.data.assets
+          res.data.assets,
+          capture
         );
       }
     });

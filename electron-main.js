@@ -128,7 +128,9 @@ async function initDatabase() {
         updatedAt BIGINT,
         fileName TEXT,
         embedding double precision[],
-        assets JSONB DEFAULT '[]'
+        assets JSONB DEFAULT '[]',
+        capture JSONB,
+        foundation JSONB
       )
     `);
 
@@ -149,6 +151,12 @@ async function initDatabase() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_chats_source ON chats(source)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_chats_type ON chats(type)');
 
+    // Capture columns, added after the table already existed in the wild —
+    // capture holds the raw fields for (re)sending to Foundation, foundation
+    // holds the delivery status. Neither ever leaves the archive.
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS capture JSONB');
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS foundation JSONB');
+
     await client.query('COMMIT');
     console.log('[Chronicle] PostgreSQL Schema verified.');
   } catch (err) {
@@ -166,8 +174,8 @@ ipcMain.handle('save-database', async (event, items) => {
     await client.query('BEGIN');
     for (const item of items) {
       await client.query(`
-        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets, capture, foundation)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE SET
           type = EXCLUDED.type,
           title = EXCLUDED.title,
@@ -177,7 +185,9 @@ ipcMain.handle('save-database', async (event, items) => {
           source = EXCLUDED.source,
           updatedAt = EXCLUDED.updatedAt,
           embedding = EXCLUDED.embedding,
-          assets = EXCLUDED.assets
+          assets = EXCLUDED.assets,
+          capture = EXCLUDED.capture,
+          foundation = EXCLUDED.foundation
       `, [
         item.id,
         item.type || 'chat',
@@ -190,7 +200,9 @@ ipcMain.handle('save-database', async (event, items) => {
         item.updatedAt || item.createdAt,
         item.fileName,
         item.embedding,
-        JSON.stringify(item.assets || [])
+        JSON.stringify(item.assets || []),
+        item.capture ? JSON.stringify(item.capture) : null,
+        item.foundation ? JSON.stringify(item.foundation) : null
       ]);
     }
     await client.query('COMMIT');
@@ -213,6 +225,8 @@ ipcMain.handle('load-database', async () => {
       updatedAt: Number(r.updatedat),
       tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags,
       assets: typeof r.assets === 'string' ? JSON.parse(r.assets) : r.assets,
+      capture: typeof r.capture === 'string' ? JSON.parse(r.capture) : r.capture,
+      foundation: typeof r.foundation === 'string' ? JSON.parse(r.foundation) : r.foundation,
       embedding: r.embedding
     }));
   } catch (err) {

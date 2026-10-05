@@ -39,6 +39,34 @@ export interface Link {
 }
 
 /**
+ * Raw chat data preserved from the import, destined for Foundation exactly as
+ * it is. Derived data (summary/tags/embedding) never enters this shape — see
+ * Gaia-Documentation/capture-chronicle.md.
+ */
+export interface CaptureTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface CaptureData {
+  sourceProvider?: string;
+  url?: string;
+  occurredAt?: string;
+  turns?: CaptureTurn[];
+}
+
+export type FoundationCaptureStatus = 'pending' | 'sent' | 'failed';
+
+/** Local bookkeeping of whether this chat reached Foundation. Never sent. */
+export interface FoundationCaptureState {
+  status: FoundationCaptureStatus;
+  providerConversationId?: string;
+  id?: string;
+  error?: string;
+  at?: number;
+}
+
+/**
  * Core Entry in the Archive (can be a Chat or a Note)
  */
 export interface ChatEntry {
@@ -54,6 +82,8 @@ export interface ChatEntry {
   fileName?: string;
   embedding?: number[]; 
   assets?: string[]; // Base64 encoded image strings or URIs
+  capture?: CaptureData; // raw capture fields kept for (re)sending to Foundation
+  foundation?: FoundationCaptureState; // delivery status of the capture step
 }
 
 /**

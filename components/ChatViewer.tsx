@@ -22,6 +22,7 @@ interface ChatViewerProps {
   returnToMindMap?: boolean;
   onTagClick: (tag: string) => void;
   activeRelatedTags?: string[];
+  onRetryCapture?: (chat: ChatEntry) => void;
 }
 
 const ImageGallery: React.FC<{ assets: string[] }> = ({ assets }) => (
@@ -156,7 +157,7 @@ const AIMessageContent: React.FC<{ message: Message; source: string }> = ({ mess
 );
 
 export const ChatViewer: React.FC<ChatViewerProps> = ({ 
-  chat, allChats, allLinks, onClose, onDelete, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [] 
+  chat, allChats, allLinks, onClose, onDelete, onUpdate, onSelectChat, onAddLink, onRemoveLink, settings, returnToMindMap, onTagClick, activeRelatedTags = [], onRetryCapture 
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -255,6 +256,28 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                      <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-terracotta hover:text-red-600 transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><TrashIcon /></button>
                 </div>
             </div>
+
+            {!isNote && chat.foundation && (
+              <div className="mt-3 flex items-center gap-3 flex-wrap">
+                {chat.foundation.status === 'sent' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-green/10 text-sage-green text-[10px] font-black uppercase tracking-widest">
+                    Captured to Gaia
+                  </span>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
+                      {chat.foundation.status === 'pending' ? 'Sending to Gaia…' : 'Not sent to Gaia'}
+                    </span>
+                    <button onClick={() => onRetryCapture?.(chat)} className="text-[10px] font-black uppercase tracking-widest text-sage-green hover:underline">
+                      Retry
+                    </button>
+                    {chat.foundation.status === 'failed' && chat.foundation.error && (
+                      <span className="text-[10px] text-moss-brown truncate max-w-md">{chat.foundation.error}</span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
         </div>
       </div>
 

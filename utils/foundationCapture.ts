@@ -15,6 +15,8 @@
  * produce one to begin with.
  */
 
+import { parseChatMessages } from './chatUtils';
+
 export type FoundationTurnRole = 'user' | 'assistant';
 
 export interface FoundationTurn {
@@ -156,4 +158,16 @@ export function buildChatIngestPayload(raw: RawChatCapture): ChatIngestPayload {
   }
 
   return payload;
+}
+
+/**
+ * Derives Foundation turns from a raw transcript using the same parser the
+ * archive viewer uses. This is a structural split of the existing text (who
+ * said what), not interpretation — the content itself is unchanged. Roles map
+ * onto Foundation's two canonical roles; empty turns are dropped.
+ */
+export function turnsFromTranscript(content: string, baseTime: number = Date.now()): FoundationTurn[] {
+  return parseChatMessages(content, baseTime)
+    .filter((m) => m.text && m.text.trim())
+    .map((m) => ({ role: toFoundationRole(m.role), text: m.text }));
 }

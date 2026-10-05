@@ -54,3 +54,32 @@
     Contract-weigering: `status` → 422, onbekend veld → 422, zonder token → 401.
     Test-observatie-id: `1c18f0de-c17d-475e-9c25-21dac2c334a4` (nog op te ruimen
     of te laten staan).
+
+## 2026-10-05 (Capture-verbinding, fase 2 — import splitsen)
+
+- Findings:
+  - De verrijking (`analyzeContent`/`generateEmbedding`) zat ín `UploadModal` en
+    gooide bij falen de hele import om (`success:false`) — dat botst met de regel
+    "de archief-write mag nooit falen".
+- Conclusions:
+  - Verrijking is nu best-effort; het archief wordt altijd eerst gezet en capture
+    is een losse, retrybare stap. De ruwe capture-velden (`capture`) en de
+    leverstatus (`foundation`) worden op de entry bewaard, zodat een mislukte
+    zending later opnieuw kan zonder de chat opnieuw te importeren.
+  - Alleen chats worden gecaptured; een geïmporteerde afbeelding is een visueel
+    asset, geen chat.
+- Actions:
+  - `types.ts`: `CaptureData`, `CaptureTurn`, `FoundationCaptureState`;
+    `ChatEntry.capture`/`.foundation`.
+  - `utils/foundationCapture.ts`: `turnsFromTranscript()` (hergebruikt
+    `parseChatMessages`).
+  - `electron-main.js` + `scripts/migrate.js`: kolommen `capture JSONB` en
+    `foundation JSONB` (+ `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` voor
+    bestaande DB's), save/load-mapping.
+  - `UploadModal.tsx`: non-fataal verrijken (`enrichContent`/`safeEmbedding`),
+    turns afgeleid uit het transcript, capture doorgegeven aan `onUpload`.
+  - `App.tsx`: `captureToFoundation`, `setFoundationState`, `handleRetryCapture`;
+    archief-eerst, capture daarna (fire-and-forget).
+  - `ChatViewer.tsx`: status-pil (Captured to Gaia / Sending… / Not sent) + Retry.
+  - Validatie: 24 tests groen, `vite build` ok, `node --check` ok. App-niveau
+    end-to-end nog niet gedraaid (vereist lokale Postgres + GUI).

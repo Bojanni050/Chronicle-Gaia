@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link } from './types';
+import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState } from './types';
 import { Sidebar } from './components/Sidebar';
 import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon } from './components/Icons';
 import { UploadModal } from './components/UploadModal';
@@ -9,6 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { RightSidebar } from './components/RightSidebar';
 import { AdvancedSearch } from './components/AdvancedSearch';
+import { buildChatIngestPayload } from './utils/foundationCapture';
 
 const STORAGE_KEY = 'chronicle_chats_v1';
 const LINKS_KEY = 'chronicle_links_v1';
@@ -169,16 +170,69 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[]) => {
+  const setFoundationState = (id: string, foundation: FoundationCaptureState) => {
+    setState(prev => ({
+      ...prev,
+      chats: prev.chats.map(c => (c.id === id ? { ...c, foundation } : c)),
+      viewingChat: prev.viewingChat?.id === id ? { ...prev.viewingChat, foundation } : prev.viewingChat,
+    }));
+  };
+
+  // Sends one chat's raw capture to Foundation and records the delivery status
+  // on the entry. Never throws: a failure here becomes a retryable state, it
+  // can never undo the archive write that already happened.
+  const captureToFoundation = async (chat: ChatEntry) => {
+    if (!chat.capture || !window.electronAPI?.captureChatToFoundation) return;
+    let payload;
+    try {
+      payload = buildChatIngestPayload({
+        content: chat.content,
+        title: chat.title,
+        sourceProvider: chat.capture.sourceProvider,
+        url: chat.capture.url,
+        occurredAt: chat.capture.occurredAt,
+        turns: chat.capture.turns,
+      });
+    } catch (err: any) {
+      setFoundationState(chat.id, { status: 'failed', error: err?.message || 'invalid capture payload', at: Date.now() });
+      return;
+    }
+    const result = await window.electronAPI.captureChatToFoundation(payload);
+    if (result.ok) {
+      setFoundationState(chat.id, {
+        status: 'sent',
+        providerConversationId: result.providerConversationId,
+        id: result.id,
+        at: Date.now(),
+      });
+    } else {
+      setFoundationState(chat.id, {
+        status: 'failed',
+        error: result.details?.length ? result.details.join('; ') : (result.error || 'capture failed'),
+        at: Date.now(),
+      });
+    }
+  };
+
+  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData) => {
+    const now = Date.now();
     const newChat: ChatEntry = {
       id: Math.random().toString(36).substr(2, 9),
       type: ItemType.CHAT,
       title, content, summary, tags, source, 
-      createdAt: Date.now(), 
-      updatedAt: Date.now(),
-      fileName, embedding, assets
+      createdAt: now, 
+      updatedAt: now,
+      fileName, embedding, assets,
+      capture,
+      foundation: capture ? { status: 'pending', at: now } : undefined,
     };
+    // Archive first. Persistence of the entry never waits on the capture step.
     setState(prev => ({ ...prev, chats: [newChat, ...prev.chats], isUploading: false, viewingChat: newChat, viewMode: 'archive' }));
+    if (capture) void captureToFoundation(newChat);
+  };
+
+  const handleRetryCapture = (chat: ChatEntry) => {
+    void captureToFoundation(chat);
   };
 
   const handleCreateNote = () => {
@@ -377,6 +431,7 @@ const App: React.FC = () => {
                   settings={state.settings}
                   returnToMindMap={state.returnToMindMap}
                   activeRelatedTags={state.relatedTags}
+                  onRetryCapture={handleRetryCapture}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">

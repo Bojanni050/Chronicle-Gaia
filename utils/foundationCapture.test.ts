@@ -4,6 +4,7 @@ import {
   buildChatIngestPayload,
   toFoundationRole,
   toSourceProvider,
+  turnsFromTranscript,
   CHRONICLE_CAPTURE_SOURCE,
 } from './foundationCapture';
 
@@ -134,5 +135,32 @@ describe('toSourceProvider', () => {
     expect(toSourceProvider('My Cool Bot')).toBe('my-cool-bot');
     expect(toSourceProvider('')).toBeUndefined();
     expect(toSourceProvider(undefined)).toBeUndefined();
+  });
+});
+
+describe('turnsFromTranscript', () => {
+  it('splits a raw transcript into user/assistant turns', () => {
+    const turns = turnsFromTranscript('User: hallo\n\nAssistant: hoi\n\nUser: nog iets', 0);
+    expect(turns).toEqual([
+      { role: 'user', text: 'hallo' },
+      { role: 'assistant', text: 'hoi' },
+      { role: 'user', text: 'nog iets' },
+    ]);
+  });
+
+  it('treats an unlabeled blob as a single user turn', () => {
+    const turns = turnsFromTranscript('just some text', 0);
+    expect(turns).toEqual([{ role: 'user', text: 'just some text' }]);
+  });
+
+  it('produces a payload-usable turn array', () => {
+    const payload = buildChatIngestPayload({
+      content: 'User: hoi\n\nAssistant: hallo',
+      turns: turnsFromTranscript('User: hoi\n\nAssistant: hallo', 0),
+    });
+    expect(payload.turns).toEqual([
+      { role: 'user', text: 'hoi' },
+      { role: 'assistant', text: 'hallo' },
+    ]);
   });
 });

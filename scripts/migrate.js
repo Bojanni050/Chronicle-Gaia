@@ -60,6 +60,10 @@ async function migrate() {
       END $$;
     `);
 
+    // Capture columns (raw fields for Foundation + delivery status).
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS capture JSONB');
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS foundation JSONB');
+
     console.log('Checking "links" table...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS links (
