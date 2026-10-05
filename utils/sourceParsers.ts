@@ -227,13 +227,31 @@ function genericTurns(messages: any[]): ParsedTurn[] {
   const turns: ParsedTurn[] = [];
   for (const msg of messages) {
     const role = String(msg?.role ?? msg?.from ?? (msg?.type === 'human' ? 'user' : 'model')).toLowerCase();
-    const content = msg?.content ?? msg?.value ?? msg?.text ?? '';
-    const text = (typeof content === 'string' ? content : Array.isArray(content) ? content.map(String).join('\n') : '').trim();
+    // Text can be a plain string (content/value/text) or an array of typed
+    // blocks (contents: [{type:"text", content:"..."}]) — a common
+    // third-party-export shape. Only text blocks are joined; other blocks
+    // (images, tools) are not invented into text.
+    let raw = msg?.content ?? msg?.value ?? msg?.text;
+    if (raw === undefined && Array.isArray(msg?.contents)) {
+      raw = msg.contents
+        .filter((b: any) => b && (b.type === 'text' || b.type === undefined))
+        .map((b: any) => b.content ?? b.text ?? '');
+    }
+    const text = (typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.map(String).join('\n') : '').trim();
     if (!text) continue;
     if (USER_ROLES.includes(role)) turns.push({ role: 'user', text });
     else if (ASSISTANT_ROLES.includes(role)) turns.push({ role: 'assistant', text });
   }
   return turns;
+}
+
+// A conversation id carried by an export (e.g. ChatGPT's `chatGroupId`) becomes
+// the URL that gives the delivery a stable dedup identity.
+function urlFromExport(root: any, provider?: ParsedSourceProvider): string | undefined {
+  if (!root || Array.isArray(root)) return undefined;
+  const id = root.chatGroupId || root.conversation_id || root.conversationId;
+  if (typeof id === 'string' && id) return `https://chatgpt.com/c/${id}`;
+  return undefined;
 }
 
 function genericMessages(json: any): any[] | null {
@@ -244,6 +262,107 @@ function genericMessages(json: any): any[] | null {
     if (Array.isArray(json.conversation)) return json.conversation;
   }
   return null;
+}
+
+// ── Markdown export (third-party exporter: ChatGPT/Claude/Gemini) ────────────
+//
+// A common third-party export shape, seen in the wild:
+//
+//   > From: https://chatgpt.com/g/g-p-.../c/<id>
+//
+//   # you asked
+//   message time: 2026-10-05 02:08:07
+//
+//   <message>
+//
+//   ---
+//
+//   # chatgpt response
+//
+//   <message>
+//
+// Headings mark the speaker; `> From:` carries the real conversation URL (the
+// dedup anchor); `message time:` carries the timestamp. Parsing is structural:
+// which part is whose turn — no rewriting of the text itself.
+
+const MD_USER_HEADING = /^#+\s*(you|human|user)\b.*$/im;
+const MD_ASSISTANT_HEADING = /^#+\s*(chatgpt|claude|gemini|assistant|ai|model)\b.*$/im;
+const MD_MESSAGE_TIME = /^\s*message time:\s*(.+)$/i;
+const MD_FROM = /^\s*>\s*From:\s*(\S+)\s*$/im;
+
+function providerFromUrl(url: string): ParsedSourceProvider {
+  if (/chatgpt\.com|openai\.com/i.test(url)) return 'chatgpt';
+  if (/claude\.ai|anthropic\.com/i.test(url)) return 'claude';
+  if (/gemini\.google\.com|bard\.google\.com/i.test(url)) return 'gemini';
+  if (/qwen/i.test(url)) return 'qwen';
+  return 'other';
+}
+
+/** True when this text looks like the third-party Markdown export shape. */
+export function looksLikeMarkdownExport(text: string): boolean {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  return MD_USER_HEADING.test(text) && MD_ASSISTANT_HEADING.test(text);
+}
+
+export function parseMarkdownTranscript(text: string): ParsedConversation | null {
+  if (!looksLikeMarkdownExport(text)) return null;
+
+  const fromMatch = text.match(MD_FROM);
+  const url = fromMatch ? fromMatch[1] : undefined;
+
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const turns: ParsedTurn[] = [];
+  let currentRole: 'user' | 'assistant' | null = null;
+  let buffer: string[] = [];
+  let firstTime: number | undefined;
+  let lastTime: number | undefined;
+
+  const flush = () => {
+    const body = buffer.join('\n').trim();
+    if (currentRole && body) turns.push({ role: currentRole, text: body });
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (MD_USER_HEADING.test(line)) {
+      flush();
+      currentRole = 'user';
+      continue;
+    }
+    if (MD_ASSISTANT_HEADING.test(line)) {
+      flush();
+      currentRole = 'assistant';
+      continue;
+    }
+    // A horizontal rule separates turns in this format — end the current one.
+    if (/^\s*-{3,}\s*$/.test(line)) {
+      flush();
+      currentRole = null;
+      continue;
+    }
+    const timeMatch = line.match(MD_MESSAGE_TIME);
+    if (timeMatch) {
+      const parsed = parseTime(timeMatch[1].trim());
+      if (parsed !== undefined) {
+        firstTime = firstTime ?? parsed;
+        lastTime = parsed;
+      }
+      continue; // the timestamp line is metadata, not message text
+    }
+    if (currentRole) buffer.push(line);
+  }
+  flush();
+
+  if (!turns.length) return null;
+
+  return {
+    content: formatTurns(turns),
+    turns,
+    title: titleFrom(turns, undefined, 'Untitled conversation'),
+    url,
+    sourceProvider: url ? providerFromUrl(url) : undefined,
+    occurredAt: lastTime ?? firstTime,
+  };
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────
@@ -257,13 +376,17 @@ export function parseConversationJson(json: any): ParsedConversation | null {
     const turns = genericTurns(messages);
     if (!turns.length) return null;
     const root = Array.isArray(json) ? undefined : json;
+    // Some exports carry the conversation id per message (chatGroupId) rather
+    // than on the root — check both so the delivery gets a dedup anchor.
+    const url = urlFromExport(root) || urlFromExport(messages[0]);
     return {
       content: formatTurns(turns),
       turns,
       title: titleFrom(turns, root?.title),
-      sourceProvider: 'other',
-      createdAt: parseTime(root?.createdAt ?? root?.create_time ?? root?.created_at),
-      occurredAt: parseTime(root?.updatedAt ?? root?.update_time ?? root?.updated_at),
+      url,
+      sourceProvider: url ? providerFromUrl(url) : 'other',
+      createdAt: parseTime(root?.createdAt ?? root?.create_time ?? root?.created_at ?? messages[0]?.created_at),
+      occurredAt: parseTime(root?.updatedAt ?? root?.update_time ?? root?.updated_at ?? messages[messages.length - 1]?.created_at),
     };
   }
 

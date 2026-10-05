@@ -4,7 +4,7 @@ import { SourceType, Settings, ItemType, CaptureData, CaptureTurn } from '../typ
 import { XIcon, FileIcon, RefreshIcon, BoltIcon, PlusIcon } from './Icons';
 import { analyzeContent, generateEmbedding, ChatMetadata } from '../services/geminiService';
 import { turnsFromTranscript, toSourceProvider } from '../utils/foundationCapture';
-import { parseConversationJson, parseClaudeExport, ParsedConversation } from '../utils/sourceParsers';
+import { parseConversationJson, parseClaudeExport, parseMarkdownTranscript, ParsedConversation } from '../utils/sourceParsers';
 
 interface UploadModalProps {
   onClose: () => void;
@@ -98,6 +98,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [results, setResults] = useState<ProcessResult[]>([]);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Turns an already-parsed conversation (from an export shape) into a review
@@ -211,7 +212,15 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
         return results;
       }
 
-      // Plain text / markdown: split into turns from the transcript.
+      // Plain text / markdown. A third-party Markdown export (e.g. the
+      // "From:" + "# you asked" shape) parses into real turns and carries the
+      // conversation URL; plain transcripts fall back to the prefix splitter.
+      const mdConversation = parseMarkdownTranscript(text);
+      if (mdConversation) {
+        const r = await resultFromConversation(file.name, mdConversation, toSourceProvider(source) || 'other');
+        return [{ ...r, sourceFile }];
+      }
+
       const finalContent = text;
       const metadata = await enrichContent(finalContent, settings, file.name);
       const vector = await safeEmbedding(finalContent + "\n" + metadata.summary, settings);
@@ -239,6 +248,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
 
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: files.length });
+    setCommitError(null);
 
     const fileArray = Array.from(files) as File[];
     const processedResults: ProcessResult[] = [];
@@ -255,7 +265,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
   };
 
   const handleFinalize = () => {
-    results.forEach(res => {
+    const successful = results.filter(res => res.success && res.data);
+    // Never close silently: if there is nothing to commit, tell the user which
+    // files failed and why, and keep the review open so it can be retried.
+    if (successful.length === 0) {
+      const reasons = results
+        .filter(res => !res.success)
+        .map(res => `${res.fileName}: ${res.error || 'unrecognised format'}`);
+      setCommitError(
+        reasons.length
+          ? `Nothing imported. ${reasons.join(' | ')}`
+          : 'Nothing imported — no parsable conversations were found.'
+      );
+      return;
+    }
+
+    successful.forEach(res => {
       if (res.success && res.data) {
         // Only chats are captured to Foundation. An imported image is a visual
         // asset, not a chat; it stays in the archive.
@@ -356,6 +381,11 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
 
           {step === 'review' && (
             <div className="space-y-4">
+              {commitError && (
+                <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs font-bold">
+                  {commitError}
+                </div>
+              )}
               {results.map((res, i) => (
                 <div key={i} className="flex items-center gap-4 p-4 bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-sandstone/20">
                   {res.isImage && res.data?.assets?.[0] ? (

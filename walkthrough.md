@@ -207,3 +207,33 @@
     `generate-embedding` → 3072 dims. Build-bundle kromp 768 kB → 490 kB (de
     `@google/genai`-SDK zit niet meer in de renderer).
   - Validatie: 43 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-05 (Importformaten: Markdown-export + derde-partij JSON, en stille faal)
+
+- Findings:
+  - Bo importeerde een chat via een derde-partij export-extensie, in twee
+    vormen: een **Markdown-export** (`> From: <url>`, `# you asked` /
+    `# chatgpt response`, `message time:`) en een **JSON-export** (array van
+    berichten met `contents: [{type,content}]` + `chatGroupId`).
+  - Beide faalden: de Markdown ging als **één turn zonder url** naar Foundation,
+    de JSON gaf "Invalid chat structure" (`parseConversationJson` → null).
+  - Erger: bij enkel mislukte resultaten sloot "Commit to Archive" de modal
+    **zonder iets te importeren en zonder melding** — een stille faal.
+- Conclusions:
+  - Beide exportvormen zijn nu ondersteund; crucially leveren ze **dezelfde**
+    `provider_conversation_id` (uit de conversation-id), dus dedup werkt over
+    Markdown én JSON heen.
+  - De stille faal is gedicht: `handleFinalize` sluit nooit meer stil en toont
+    welke bestanden faalden en waarom.
+- Actions:
+  - `utils/sourceParsers.ts`: `parseMarkdownTranscript` + `looksLikeMarkdownExport`
+    (url via `> From:`, turns via headings, `occurredAt` via `message time:`);
+    `genericTurns` begrijpt nu `contents[]`-blokken; `urlFromExport` leidt de url
+    af uit `chatGroupId`/`conversation_id`.
+  - `components/UploadModal.tsx`: Markdown-tak naast de JSON-tak; `commitError`
+    + zichtbare melding; `handleFinalize` weigert stil te sluiten.
+  - Live bewezen tegen Bo's echte bestanden (`Gaia-geheugenarchitectuur.md` én
+    `.json`): beide → url `https://chatgpt.com/c/6ac2ea61-…`, provider chatgpt,
+    2 echte turns.
+  - Validatie: 50 tests groen, `vite build` ok. Na parserwijziging
+    `npm run build:parsers` gedraaid (CJS bijgewerkt).

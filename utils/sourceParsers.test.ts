@@ -5,6 +5,8 @@ import {
   parseClaudeExport,
   parseChatGPTConversation,
   parseConversationJson,
+  parseMarkdownTranscript,
+  looksLikeMarkdownExport,
 } from './sourceParsers';
 
 describe('parseClaudeConversation', () => {
@@ -155,6 +157,59 @@ describe('parseChatGPTConversation (mapping tree)', () => {
   });
 });
 
+describe('parseMarkdownTranscript (third-party exporter)', () => {
+  const exportMd = `> From: https://chatgpt.com/g/g-p-6a73314f25a0819183abf95e1617d71b-gaia/c/6ac2ea61-4fb0-83ed-b8da-f94a267d25c8
+
+# you asked
+
+message time: 2026-10-05 02:08:07
+
+Hindsight werkt met geïsoleerde banken.
+
+---
+
+# chatgpt response
+
+Ja. Dat is architectonisch netjes.
+`;
+
+  it('recognises the export shape', () => {
+    expect(looksLikeMarkdownExport(exportMd)).toBe(true);
+    expect(looksLikeMarkdownExport('User: hoi\n\nAssistant: hallo')).toBe(false);
+  });
+
+  it('splits speakers into user/assistant turns', () => {
+    const parsed = parseMarkdownTranscript(exportMd)!;
+    expect(parsed.turns).toEqual([
+      { role: 'user', text: 'Hindsight werkt met geïsoleerde banken.' },
+      { role: 'assistant', text: 'Ja. Dat is architectonisch netjes.' },
+    ]);
+  });
+
+  it('extracts the conversation url and derives the provider', () => {
+    const parsed = parseMarkdownTranscript(exportMd)!;
+    expect(parsed.url).toBe('https://chatgpt.com/g/g-p-6a73314f25a0819183abf95e1617d71b-gaia/c/6ac2ea61-4fb0-83ed-b8da-f94a267d25c8');
+    expect(parsed.sourceProvider).toBe('chatgpt');
+  });
+
+  it('parses the message time as occurredAt (not as message text)', () => {
+    const parsed = parseMarkdownTranscript(exportMd)!;
+    expect(parsed.occurredAt).toBe(Date.parse('2026-10-05 02:08:07'));
+    expect(parsed.turns[0].text).not.toContain('message time');
+  });
+
+  it('handles claude and gemini headings too', () => {
+    const claudeMd = `> From: https://claude.ai/chat/abc\n\n# human\n\nhoi\n\n---\n\n# claude\n\ndag\n`;
+    const parsed = parseMarkdownTranscript(claudeMd)!;
+    expect(parsed.turns.map((t) => t.role)).toEqual(['user', 'assistant']);
+    expect(parsed.sourceProvider).toBe('claude');
+  });
+
+  it('returns null when the shape is absent', () => {
+    expect(parseMarkdownTranscript('just some text')).toBeNull();
+  });
+});
+
 describe('parseConversationJson dispatcher', () => {
   it('detects a mapping tree as ChatGPT', () => {
     const parsed = parseConversationJson({
@@ -186,5 +241,26 @@ describe('parseConversationJson dispatcher', () => {
 
   it('returns null when there is nothing to parse', () => {
     expect(parseConversationJson({})).toBeNull();
+  });
+
+  it('parses a contents[]-block export with a chatGroupId (third-party JSON)', () => {
+    const exportJson = [
+      {
+        id: 'm1', role: 'user', chatGroupId: '6ac2ea61-4fb0-83ed-b8da-f94a267d25c8',
+        contents: [{ type: 'text', content: 'vraag' }], created_at: '2026-10-05 02:08:07',
+      },
+      {
+        id: 'm2', role: 'assistant', chatGroupId: '6ac2ea61-4fb0-83ed-b8da-f94a267d25c8',
+        contents: [{ type: 'text', content: 'antwoord' }, { type: 'image', content: 'ignored' }],
+        created_at: '2026-10-05 02:08:18',
+      },
+    ];
+    const parsed = parseConversationJson(exportJson)!;
+    expect(parsed.turns).toEqual([
+      { role: 'user', text: 'vraag' },
+      { role: 'assistant', text: 'antwoord' },
+    ]);
+    expect(parsed.url).toBe('https://chatgpt.com/c/6ac2ea61-4fb0-83ed-b8da-f94a267d25c8');
+    expect(parsed.sourceProvider).toBe('chatgpt');
   });
 });
