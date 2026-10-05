@@ -262,3 +262,28 @@
     inline `TrashIcon` weg.
   - `components/Icons.tsx`: `ArchiveIcon` toegevoegd.
   - Validatie: 50 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-05 (Dedup bij import: url eerst, content-hash als fallback)
+
+- Findings:
+  - Chronicle had geen inhoudelijke dedup: elke import kreeg een random id, dus
+    dezelfde chat twee keer importeren gaf twee rijen — terwijl Foundation de
+    tweede als upsert ziet. Dat liep uit elkaar (drift).
+  - Foundation's `contentHash` (server/contentHash.js) is een simpele 32-bit
+    hash (`ch_...`), geen sha256 — bewust "good enough" voor tekst-dedup.
+- Conclusions (Bo): sleutel = url waar die er is, anders content-hash; bij een
+  treffer: identieke inhoud → niet importeren, andere inhoud → incrementeel
+  updaten (geen tweede rij). Bijwerken → opnieuw capturen naar Foundation.
+  Bewuste beperking: zonder url zijn twee verschillende chats met identieke
+  tekst niet te onderscheiden (gedocumenteerd in de code).
+- Actions:
+  - Nieuw `utils/chatDedup.ts` (+ 12 tests): `foundationContentHash` (zelfde
+    algoritme als Foundation, portable), `normalizeUrl` (zelfde normalisatie als
+    `providerConversationId.js`), `dedupKeys`, `findChatDuplicate`.
+  - `App.tsx` `handleUpload`: vóór toevoegen zoeken op url/hash; identiek →
+    overslaan; anders → bestaande entry bijwerken + opnieuw capturen. Korte
+    melding (`importNotice`) toont "already in your archive" / "Updated existing
+    chat".
+  - `types.ts`: `ChatEntry.contentHash`; `electron-main.js`: kolom `"contentHash"`
+    (+ ALTER), save/load-mapping; kolomnaam-quoting op de VPS bewezen.
+  - Validatie: 62 tests groen, `vite build` ok, `node --check` ok.

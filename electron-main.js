@@ -196,7 +196,8 @@ async function initDatabase() {
         capture JSONB,
         foundation JSONB,
         "sourceFile" JSONB,
-        archived BOOLEAN DEFAULT FALSE
+        archived BOOLEAN DEFAULT FALSE,
+        "contentHash" TEXT
       )
     `);
 
@@ -224,6 +225,7 @@ async function initDatabase() {
     await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS foundation JSONB');
     await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS "sourceFile" JSONB');
     await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE');
+    await client.query('ALTER TABLE chats ADD COLUMN IF NOT EXISTS "contentHash" TEXT');
 
     await client.query('COMMIT');
     console.log('[Chronicle] PostgreSQL Schema verified.');
@@ -242,8 +244,8 @@ ipcMain.handle('save-database', async (event, items) => {
     await client.query('BEGIN');
     for (const item of items) {
       await client.query(`
-        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets, capture, foundation, "sourceFile", archived)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        INSERT INTO chats (id, type, title, content, summary, tags, source, createdAt, updatedAt, fileName, embedding, assets, capture, foundation, "sourceFile", archived, "contentHash")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO UPDATE SET
           type = EXCLUDED.type,
           title = EXCLUDED.title,
@@ -257,7 +259,8 @@ ipcMain.handle('save-database', async (event, items) => {
           capture = EXCLUDED.capture,
           foundation = EXCLUDED.foundation,
           "sourceFile" = EXCLUDED."sourceFile",
-          archived = EXCLUDED.archived
+          archived = EXCLUDED.archived,
+          "contentHash" = EXCLUDED."contentHash"
       `, [
         item.id,
         item.type || 'chat',
@@ -274,7 +277,8 @@ ipcMain.handle('save-database', async (event, items) => {
         item.capture ? JSON.stringify(item.capture) : null,
         item.foundation ? JSON.stringify(item.foundation) : null,
         item.sourceFile ? JSON.stringify(item.sourceFile) : null,
-        !!item.archived
+        !!item.archived,
+        item.contentHash || null
       ]);
     }
     await client.query('COMMIT');
@@ -301,6 +305,7 @@ ipcMain.handle('load-database', async () => {
       foundation: typeof r.foundation === 'string' ? JSON.parse(r.foundation) : r.foundation,
       sourceFile: typeof r.sourceFile === 'string' ? JSON.parse(r.sourceFile) : r.sourceFile,
       archived: r.archived === true || r.archived === 't',
+      contentHash: r.contentHash,
       embedding: r.embedding
     }));
   } catch (err) {

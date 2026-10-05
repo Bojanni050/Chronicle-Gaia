@@ -10,6 +10,7 @@ import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { RightSidebar } from './components/RightSidebar';
 import { AdvancedSearch } from './components/AdvancedSearch';
 import { buildChatIngestPayload } from './utils/foundationCapture';
+import { foundationContentHash, normalizeUrl } from './utils/chatDedup';
 
 const STORAGE_KEY = 'chronicle_chats_v1';
 const LINKS_KEY = 'chronicle_links_v1';
@@ -78,6 +79,8 @@ const DEFAULT_SETTINGS: Settings = {
   userName: ''
 };
 
+type ImportNotice = { kind: 'duplicate' | 'updated'; title: string } | null;
+
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -105,6 +108,8 @@ const App: React.FC = () => {
         type: 'all'
     }
   });
+
+  const [importNotice, setImportNotice] = useState<ImportNotice>(null);
 
   useEffect(() => {
     const initApp = async () => {
@@ -302,6 +307,46 @@ const App: React.FC = () => {
 
   const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef, attachmentRefs?: AttachmentRef[]) => {
     const now = Date.now();
+    const contentHash = foundationContentHash(content);
+
+    // Dedup: is this conversation already in the archive? Exact URL first,
+    // content hash as the fallback for URL-less sources (utils/chatDedup).
+    const existing = state.chats.find(c => {
+      const urlMatch = capture?.url && c.capture?.url && normalizeUrl(c.capture.url) === normalizeUrl(capture.url);
+      const hashMatch = (c.contentHash || foundationContentHash(c.content)) === contentHash;
+      return urlMatch || hashMatch;
+    });
+
+    if (existing) {
+      const identical = (existing.contentHash || foundationContentHash(existing.content)) === contentHash;
+      if (identical) {
+        // Same chat, same content: do not import a duplicate.
+        setImportNotice({ kind: 'duplicate', title: existing.title });
+        return;
+      }
+      // Same chat, grown or changed: update in place, then re-capture so Gaia
+      // sees the newer version too.
+      const updated: ChatEntry = {
+        ...existing,
+        title: title || existing.title,
+        content, summary: summary || existing.summary, tags, source,
+        embedding, assets,
+        capture: capture ? { ...existing.capture, ...capture } : existing.capture,
+        contentHash,
+        fileName,
+        sourceFile: sourceFileRef
+          ? { hash: '', size: 0, filename: sourceFileRef.filename, mimeType: sourceFileRef.mimeType, path: sourceFileRef.path, status: 'pending', at: now }
+          : existing.sourceFile,
+        foundation: capture ? { status: 'pending', at: now } : existing.foundation,
+        updatedAt: now,
+      };
+      setState(prev => ({ ...prev, chats: prev.chats.map(c => c.id === existing.id ? updated : c), isUploading: false, viewingChat: updated, viewMode: 'archive' }));
+      setImportNotice({ kind: 'updated', title: updated.title });
+      if (sourceFileRef) void captureSourceFile(updated, sourceFileRef);
+      if (capture) void captureToFoundation(updated, attachmentRefs);
+      return;
+    }
+
     const newChat: ChatEntry = {
       id: Math.random().toString(36).substr(2, 9),
       type: ItemType.CHAT,
@@ -310,6 +355,7 @@ const App: React.FC = () => {
       updatedAt: now,
       fileName, embedding, assets,
       capture,
+      contentHash,
       foundation: capture ? { status: 'pending', at: now } : undefined,
       sourceFile: sourceFileRef ? { hash: '', size: 0, filename: sourceFileRef.filename, mimeType: sourceFileRef.mimeType, path: sourceFileRef.path, status: 'pending', at: now } : undefined,
     };
@@ -569,6 +615,25 @@ const App: React.FC = () => {
           </>
         )}
       </div>
+
+      {importNotice && (
+        <div className="fixed bottom-6 right-6 z-[80] max-w-sm">
+          <div className={`flex items-start gap-3 p-4 rounded-2xl shadow-2xl border text-xs font-bold ${
+            importNotice.kind === 'duplicate'
+              ? 'bg-white dark:bg-stone-900 border-sandstone/40 text-earth-dark dark:text-stone-200'
+              : 'bg-sage-green/10 border-sage-green/40 text-sage-green'
+          }`}>
+            <span className="flex-1">
+              {importNotice.kind === 'duplicate'
+                ? <>Already in your archive — not imported again: <span className="not-italic">"{importNotice.title}"</span></>
+                : <>Updated existing chat (grew since last import): <span className="not-italic">"{importNotice.title}"</span></>}
+            </span>
+            <button onClick={() => setImportNotice(null)} className="text-moss-brown hover:text-earth-dark shrink-0" aria-label="Dismiss">
+              <XIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {state.isUploading && (
         <UploadModal 

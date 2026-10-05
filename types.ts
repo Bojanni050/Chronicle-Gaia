@@ -114,6 +114,11 @@ export interface ChatEntry {
    * not delete from Gaia").
    */
   archived?: boolean;
+  /**
+   * Foundation's content hash of this chat's transcript, computed at import so
+   * a re-import can be recognised without re-deriving it. See utils/chatDedup.
+   */
+  contentHash?: string;
 }
 
 /**
