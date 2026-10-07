@@ -7,6 +7,7 @@ import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIco
 import { parseChatMessages, Message } from '../utils/chatUtils';
 import { ChatCard } from './ChatCard';
 import { cosineSimilarity } from '../utils/vectorUtils';
+import { ChroniclePulse } from './ChroniclePulse';
 
 interface ChatViewerProps {
   chat: ChatEntry;
@@ -330,6 +331,14 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                       </button>
                   ))}
               </div>
+
+              <ChroniclePulse
+                chat={chat}
+                allChats={allChats}
+                allLinks={allLinks}
+                onSelectChat={(related) => onSelectChat(related)}
+                onAddLink={onAddLink}
+              />
 
               <div className={`relative transition-all duration-700 ${isNote ? 'bg-[#FFFDF7] dark:bg-stone-900 p-12 rounded-[2rem] shadow-2xl border-2 border-dashed border-amber-200' : ''}`}>
                   {isEditing && isNote ? (
