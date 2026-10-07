@@ -21,4 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importChats: (existingIds) => ipcRenderer.invoke('import-chats', existingIds),
   sendNotification: (title, body) => ipcRenderer.send('notify', { title, body }),
   platform: process.platform,
+  onChatIngested: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat-ingested', handler);
+    return () => ipcRenderer.removeListener('chat-ingested', handler);
+  },
 });

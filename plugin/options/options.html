@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Chronicle Chat Exporter — instellingen</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; color: #1c1917; background: #fefef9; margin: 40px; }
+    label { display: block; margin: 16px 0 4px; font-weight: 600; }
+    input { width: 100%; max-width: 420px; padding: 8px; border: 1px solid rgba(0,0,0,0.2); border-radius: 6px; box-sizing: border-box; }
+    button { margin-top: 20px; padding: 8px 16px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.15); background: #1c1917; color: #fefef9; cursor: pointer; }
+    .status { margin-top: 12px; min-height: 1em; }
+    code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Chronicle Chat Exporter</h1>
+  <p>
+    De plugin levert gesprekken af bij Chronicle's lokale ingest-listener
+    (<code>POST /ingest/chat</code>, alleen <code>127.0.0.1</code>).
+    Chronicle bewaart de archiefkopie en forwardt automatisch naar
+    Foundation's Ingestie Gateway.
+  </p>
+  <label for="baseUrl">Chronicle listener-URL</label>
+  <input id="baseUrl" placeholder="http://127.0.0.1:4580">
+  <label for="token">Ingest-token</label>
+  <input id="token" type="password" placeholder="CHRONICLE_INGEST_TOKEN">
+  <p>
+    Het token is dezelfde als die van de listener: <code>CHRONICLE_INGEST_TOKEN</code>,
+    <code>ingestToken</code> in <code>foundation.local.json</code>, of — zonder
+    eigen ingest-token — de gedeelde Foundation-token. Het token blijft in
+    <code>chrome.storage.local</code> van de service worker; de provider-scripts
+    zien het nooit.
+  </p>
+  <button id="save">Opslaan</button>
+  <div class="status" id="status"></div>
+  <script src="options.js"></script>
+</body>
+</html>

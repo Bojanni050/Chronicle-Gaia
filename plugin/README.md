@@ -1,0 +1,76 @@
+# Chronicle Chat Exporter (browserplugin)
+
+Chrome-extensie (MV3) die het huidige gesprek op **claude.ai** en **chatgpt.com**
+met één klik aflevert bij Chronicle — niet rechtstreeks bij Foundation. Chronicle
+is de deur: de listener schrijft de archiefkopie in de eigen `chats`-tabel en
+forwardt dezelfde raw velden automatisch naar Foundation's Ingestie Gateway
+(`POST /api/ingest/chat`, `source: "chronicle-capture"`).
+
+```
+plugin (content script)  →  service worker (token + retry-queue)
+        →  Chronicle ingest listener (127.0.0.1:4580, POST /ingest/chat)
+              →  archiefkopie (Postgres)  +  forward naar Foundation
+```
+
+## Installeren (lokaal, "Load unpacked")
+
+1. Start Chronicle (de listener start automatisch met de app, op
+   `http://127.0.0.1:4580`, uitsluitend loopback).
+2. Bepaal het ingest-token — de listener resolvet in deze volgorde:
+   - `CHRONICLE_INGEST_TOKEN` (env)
+   - `ingestToken` in `foundation.local.json`
+   - de gedeelde Foundation-token (fallback)
+3. Chrome → `chrome://extensions` → *Developer mode* → *Load unpacked* →
+   kies de map `plugin/` uit deze repo.
+4. Open de opties van de extensie: zet de listener-URL
+   (standaard `http://127.0.0.1:4580`) en het token.
+5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
+   op **→ Chronicle**.
+
+## Knop-statussen
+
+| Weergave | Betekenis |
+|---|---|
+| `✓ In Chronicle` | 201 — nieuw in het archief, doorgestuurd naar Foundation |
+| `✓ Bijgewerkt` | 200 — gegroeid gesprek, rij bijgewerkt en opnieuw doorgestuurd |
+| `✓ Al bekend` | 200 — identieke inhoud, dedup heeft hem geslikt (geen dubbele levering) |
+| `⏳ In wachtrij` | Chronicle onbereikbaar — de service worker bewaart de levering en spoelt de wachtrij door bij herstart |
+| `✗ …` | 4xx — het antwoord van de listener (bijv. een typeward-422), leesbaar teruggezet op de knop |
+
+## Bouwvorm
+
+- `manifest.json` — MV3, host-permissies alleen `claude.ai`, `chatgpt.com`
+  en `127.0.0.1`.
+- `service-worker.js` — de enige plek met het token; client-side typeward
+  (server-owned velden worden al in de plugin geweigerd, vóór verzending)
+  en een retry-queue die alleen transport-fouten bewaart (4xx is definitief
+  en wordt niet eindeloos herhaald).
+- `content/claude.js` — haalt het gesprek via de interne API van claude.ai
+  (`/api/organizations/{org}/chat_conversations/{uuid}`), DOM-fallback erachter.
+- `content/chatgpt.js` — haalt het gesprek via `/backend-api/conversation/{id}`
+  (mapping-tree → geordende turns, zelfde regels als `utils/sourceParsers.ts`),
+  DOM-fallback erachter.
+- `content/normalize.js` — gedeelde knop + statusfeedback + de
+  ParsedConversation-whitelist.
+- `options/` — listener-URL + token (`chrome.storage.local`).
+
+## Contract
+
+De plugin verstuurt uitsluitend de raw velden die de listener accepteert:
+`content`, `turns`, `title`, `url`, `sourceProvider`, `occurredAt`. Server-owned
+velden (`status`, `providerConversationId`, `contentHash`, `id`, ...) worden
+aan de plugin-kant én de listener-kant geweigerd — hetzelfde typeward-beleid
+als Foundation's `ingestPolicy.js`. De conversation-URL is first-class: zonder
+`url` heeft een levering geen dedup-identiteit.
+
+## Aandachtspunten
+
+- Beide providerscripts gebruiken de **interne** API's van Anthropic/OpenAI;
+  die kunnen wijzigen. De DOM-fallback vangt dat op, maar kan afwijken in
+  detailvorming (bijlagen, artifacts). Controleer na een site-update even of
+  de turns compleet zijn.
+- De org-id van claude.ai wordt uit `localStorage.lastActiveOrg` gelezen; als
+  een installatie een andere sleutel gebruikt, valt de knop terug op de DOM.
+- De automatische "elke API-call onderscheppen"-variant is bewust **niet**
+  gebouwd; deze knop-versie is robuuster en volstaat voor de
+  acceptance-test van de pijp (bouwen in fases).

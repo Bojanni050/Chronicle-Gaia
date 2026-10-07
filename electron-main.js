@@ -1,5 +1,6 @@
 
 const { app, BrowserWindow, ipcMain, shell, dialog, Notification } = require('electron');
+const { startIngestListener } = require('./services/ingest-listener');
 const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
@@ -722,5 +723,6 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await initDatabase();
+  startIngestListener({ pool, getMainWindow: () => mainWindow, resolveFoundationConfig });
   createWindow();
 });

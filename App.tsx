@@ -64,6 +64,7 @@ declare global {
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
       platform: string;
+      onChatIngested?: (callback: (payload: { id: string; action: string; title?: string }) => void) => () => void;
     };
   }
 }
@@ -139,6 +140,17 @@ const App: React.FC = () => {
       }));
     };
     initApp();
+  }, []);
+  // A chat arrived via the ingest listener (plugin door) while the app was
+  // running: reload from the database so the archive view shows it without a
+  // restart. The listener wrote the row; the renderer just re-reads.
+  useEffect(() => {
+    if (!window.electronAPI?.onChatIngested) return;
+    const unsubscribe = window.electronAPI.onChatIngested(async () => {
+      const chats = await window.electronAPI!.loadDatabase() || [];
+      setState(prev => ({ ...prev, chats }));
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
