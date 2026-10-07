@@ -609,7 +609,7 @@ ipcMain.handle('analyze-content', async (event, { content, imageMimeType, prefer
     const isImage = !!imageMimeType;
     const prompt = isImage
       ? 'Describe this image in detail for a searchable digital archive. Provide a suggested title, a summary, and relevant tags.'
-      : 'Summarize this AI conversation, suggest a title and tags.';
+      : 'Summarize this AI conversation. Suggest a title of 3 to 10 words and relevant tags.';
     const contentPart = isImage
       ? { inlineData: { data: content, mimeType: imageMimeType } }
       : { text: String(content).substring(0, 10000) };
@@ -617,7 +617,7 @@ ipcMain.handle('analyze-content', async (event, { content, imageMimeType, prefer
     Return a JSON object with:
     1. "summary": A clear, high-level, one-sentence summary.
     2. "tags": An array of 3-6 relevant, lowercase, single-word tags.
-    3. "suggestedTitle": A short descriptive title.`;
+    3. "suggestedTitle": A descriptive title of 3 to 10 words that captures the main topic of the article or conversation.`;
     const response = await ai.models.generateContent({
       // gemini-flash-latest: a stable alias that tracks the current flash model.
       model: isImage ? 'gemini-flash-latest' : (preferredModel || 'gemini-flash-latest'),
