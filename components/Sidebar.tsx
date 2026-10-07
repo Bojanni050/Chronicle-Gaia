@@ -125,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-80 border-r border-sandstone/40 dark:border-stone-800 bg-white dark:bg-stone-900/50 flex flex-col shrink-0 font-sans backdrop-blur-sm relative transition-all">
+    <aside className="w-[280px] border-r border-sandstone dark:border-stone-800 bg-[#F2F1EC] dark:bg-stone-900/50 flex flex-col shrink-0 font-sans relative transition-all">
       
       {/* Top Search & Filter Header */}
       <div className="p-4 space-y-4 border-b border-sandstone/40 bg-white dark:bg-stone-900 z-10 shadow-sm">
@@ -261,7 +261,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div 
                         key={f.id} 
                         className={`flex items-center gap-2 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border shadow-sm transition-all animate-in zoom-in-95 ${
-                            f.type === 'tag' ? 'bg-[#DBAA89]/10 border-[#DBAA89]/30 text-[#DBAA89]' :
+                            f.type === 'tag' ? 'bg-[#B2C9A1]/10 border-[#B2C9A1]/30 text-[#2C3E21]' :
                             f.type === 'search' ? 'bg-sage-green/10 border-sage-green/30 text-sage-green' :
                             f.type === 'source' ? 'bg-white dark:bg-stone-800 border-sandstone/40 text-earth-dark dark:text-stone-300' :
                             'bg-slate-50 dark:bg-stone-800 border-sandstone/30 text-moss-brown'

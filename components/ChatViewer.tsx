@@ -102,7 +102,7 @@ export const MessageContent = React.memo(({ text }: { text: string }) => {
             return <CodeBlock className={className}>{children}</CodeBlock>;
           },
           p: ({ children }) => <p className="mb-6 font-serif leading-8">{children}</p>,
-          h1: ({ children }) => <h1 className="text-2xl font-black mt-8 mb-4 text-stone-900 dark:text-white font-sans uppercase tracking-tight">{children}</h1>,
+          h1: ({ children }) => <h1 className="text-3xl font-light mt-8 mb-4 text-earth-dark dark:text-white font-display tracking-tight">{children}</h1>,
           h2: ({ children }) => <h2 className="text-xl font-black mt-6 mb-3 text-stone-900 dark:text-white font-sans uppercase tracking-tight">{children}</h2>,
           strong: ({ children }) => <strong className="text-stone-900 dark:text-white font-black">{children}</strong>,
           ul: ({ children }) => <ul className="list-disc pl-6 mb-6 space-y-2">{children}</ul>,
@@ -135,7 +135,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 const UserMessageBubble: React.FC<{ message: Message; userAvatar?: string; userName?: string }> = ({ message, userAvatar, userName }) => (
   <div className="flex gap-4 mt-8 mb-8 p-6 bg-white dark:bg-stone-800 rounded-2xl border border-sandstone/30 dark:border-stone-700/50 shadow-md group transition-all">
-    <div className="w-8 h-8 rounded-lg bg-[#DBAA89] flex items-center justify-center text-white shrink-0">
+    <div className="w-8 h-8 rounded-lg bg-[#394239] flex items-center justify-center text-white shrink-0">
       {userAvatar ? <img src={userAvatar} className="w-full h-full rounded-lg object-cover" alt="User" /> : <PlusIcon />}
     </div>
     <div className="flex flex-col flex-1">
@@ -235,7 +235,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                              {isNote ? <PencilIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
                          </div>
                          <div>
-                            <h1 className="text-2xl font-black text-stone-900 dark:text-white uppercase tracking-tight">{chat.title}</h1>
+                            <h1 className="text-5xl sm:text-6xl font-light text-earth-dark dark:text-white font-display tracking-tight leading-tight">{chat.title}</h1>
                             <div className="flex items-center gap-2 text-[10px] font-black text-moss-brown uppercase tracking-[0.2em] mt-1">
                                 <span>{isNote ? 'PERSONAL SYNTHESIS' : chat.source}</span>
                                 <span>•</span>

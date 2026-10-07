@@ -100,13 +100,13 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
       <div className="bg-[#F3E8DA] dark:bg-slate-900 border-b border-sandstone dark:border-slate-800 py-16 px-6 md:px-12 w-full">
         <div className="max-w-[1800px] mx-auto flex flex-col md:flex-row items-center justify-between gap-12">
           <div className="flex-1 text-center md:text-left">
-            <h2 className="text-5xl font-black text-earth-dark dark:text-white mb-6 font-sans tracking-tight leading-tight">Your Personal <span className="text-lime-600">AI Intelligence Hub</span></h2>
+            <h2 className="text-5xl font-black text-earth-dark dark:text-white mb-6 font-sans tracking-tight leading-tight">Your Personal <span className="text-[#8A9482]">AI Intelligence Hub</span></h2>
             <p className="text-moss-brown dark:text-slate-400 text-xl font-serif italic max-w-2xl leading-relaxed">
               Curating and analyzing {chats.length} distinct conversations across your digital landscape. Chronicle is your decentralized memory engine.
             </p>
           </div>
           <div className="flex flex-wrap justify-center md:justify-end gap-6 shrink-0">
-             <button onClick={onImport} className="flex items-center gap-4 bg-[#DBAA89] hover:bg-[#c69879] text-white px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
+             <button onClick={onImport} className="flex items-center gap-4 bg-[#394239] hover:bg-[#2C362C] text-white px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
                 <PlusIcon /> <span className="text-lg">Import Chat</span>
              </button>
              <button onClick={onArchive} className="flex items-center gap-4 bg-[#A9AB88] hover:bg-[#929475] text-white px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
@@ -123,7 +123,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         {/* Time Range Selector */}
         <div className="flex gap-2 p-1 bg-slate-200 dark:bg-slate-800 rounded-2xl w-fit font-sans border border-slate-300 dark:border-slate-700">
           {(['7days', '30days', 'all'] as TimeRange[]).map(r => (
-            <button key={r} onClick={() => setTimeRange(r)} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${timeRange === r ? 'bg-white dark:bg-slate-700 shadow-md text-[#A9AB88] dark:text-lime-400' : 'text-slate-500 hover:text-slate-700'}`}>
+            <button key={r} onClick={() => setTimeRange(r)} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${timeRange === r ? 'bg-white dark:bg-slate-700 shadow-md text-[#394239] dark:text-lime-400' : 'text-slate-500 hover:text-slate-700'}`}>
               {r === 'all' ? 'All History' : r === '7days' ? 'Last 7 Days' : 'Last 30 Days'}
             </button>
           ))}
@@ -131,7 +131,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 font-sans">
-          <StatCard label="Archived Chats" value={stats.totalChats} icon={<MessageIcon />} color="text-lime-500" />
+          <StatCard label="Archived Chats" value={stats.totalChats} icon={<MessageIcon />} color="text-[#8A9482]" />
           <StatCard label="Total Messages" value={stats.totalMessages} icon={<ActivityIcon />} color="text-orange-500" />
           <StatCard label="Interaction Frequency" value={`${stats.avgMessages} turns`} icon={<NetworkIcon />} color="text-blue-500" />
           <StatCard label="Preferred Engine" value={stats.mostUsedAI} icon={<ChartIcon />} color="text-purple-500" />
@@ -165,10 +165,10 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 <div key={date} className="relative">
                   <div className="flex justify-between items-end mb-3 text-sm">
                     <span className="text-slate-500 font-black tracking-tight">{date}</span>
-                    <span className="font-black text-slate-900 dark:text-white px-2 py-0.5 rounded-md bg-lime-50 dark:bg-lime-900/20 text-lime-600">{data.count} chats</span>
+                    <span className="font-black text-slate-900 dark:text-white px-2 py-0.5 rounded-md bg-[#B2C9A1]/20 dark:bg-[#B2C9A1]/10 text-[#8A9482]">{data.count} chats</span>
                   </div>
                   <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-lime-500 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(132,204,22,0.4)]" style={{ width: `${(data.count / maxActivity) * 100}%` }}></div>
+                    <div className="h-full bg-[#8A9482] rounded-full transition-all duration-1000 ease-out shadow-none" style={{ width: `${(data.count / maxActivity) * 100}%` }}></div>
                   </div>
                 </div>
               ))}
@@ -195,9 +195,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 <button 
                   key={tag} 
                   onClick={() => onTagClick?.(tag)}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:border-lime-500/30 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm group text-left"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:border-[#8A9482]/30 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm group text-left"
                 >
-                  <span className="text-sm font-black text-slate-700 dark:text-slate-200 group-hover:text-lime-600 truncate">{tag}</span>
+                  <span className="text-sm font-black text-slate-700 dark:text-slate-200 group-hover:text-[#8A9482] truncate">{tag}</span>
                   <span className="flex items-center justify-center min-w-[24px] h-6 text-[10px] font-black text-slate-400 bg-slate-50 dark:bg-slate-900 rounded-md border border-slate-100 dark:border-slate-800 ml-2 shrink-0">
                     {count}
                   </span>

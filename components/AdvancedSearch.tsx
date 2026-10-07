@@ -195,7 +195,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             </button>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-earth-dark dark:text-white uppercase tracking-widest flex items-center gap-2">
-                <BoltIcon className="w-4 h-4 text-lime-600" />
+                <BoltIcon className="w-4 h-4 text-[#8A9482]" />
                 Parameters
               </h2>
               <button onClick={resetFilters} className="text-[10px] font-black text-terracotta hover:underline uppercase">Reset All</button>
@@ -240,7 +240,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                     key={tag}
                     onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
                     className={`px-2 py-1 rounded-md text-[9px] font-black uppercase border transition-all ${
-                      selectedTags.includes(tag) ? 'bg-[#DBAA89] border-[#DBAA89] text-white' : 'bg-warm-beige/30 dark:bg-stone-800 border-sandstone/30 dark:border-stone-700 text-earth-dark'
+                      selectedTags.includes(tag) ? 'bg-[#394239] border-[#394239] text-white' : 'bg-warm-beige/30 dark:bg-stone-800 border-sandstone/30 dark:border-stone-700 text-earth-dark'
                     }`}
                   >
                     {tag}
@@ -256,7 +256,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
           
           <div className="h-16 flex items-center justify-between px-8 bg-white dark:bg-stone-900 border-b border-sandstone dark:border-stone-800 shrink-0">
              <div className="flex items-center gap-2">
-                <SearchIcon className="w-4 h-4 text-lime-600" />
+                <SearchIcon className="w-4 h-4 text-[#8A9482]" />
                 <h1 className="text-sm font-black text-earth-dark dark:text-white uppercase tracking-widest">Deep Archive Search</h1>
              </div>
              <button onClick={onClose} className="p-2 text-moss-brown hover:text-earth-dark transition-colors"><XIcon /></button>
@@ -266,7 +266,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             <div className="max-w-4xl mx-auto space-y-4">
               <div className="relative flex items-center gap-4">
                 <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-6 flex items-center text-lime-600"><SearchIcon /></div>
+                  <div className="absolute inset-y-0 left-0 pl-6 flex items-center text-[#8A9482]"><SearchIcon /></div>
                   <input 
                     type="text"
                     placeholder={isSemantic ? "Describe a concept or topic..." : "Search title, summary, or full content..."}
@@ -278,7 +278,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   <div className="absolute inset-y-0 right-4 flex items-center gap-2">
                     <button 
                       onClick={() => setIsSemantic(!isSemantic)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${isSemantic ? 'bg-lime-600 border-lime-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500'}`}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${isSemantic ? 'bg-[#394239] border-[#394239] text-white shadow-lg' : 'bg-slate-100 text-slate-500'}`}
                     >
                       <NetworkIcon className="w-3 h-3" /> Semantic
                     </button>
@@ -298,7 +298,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                    {isSemantic ? 'Conceptual Analysis Mode' : 'Keyword Pattern Matching Mode'}
                  </p>
                  {isSemantic && (
-                   <span className="text-[10px] font-black text-lime-600 bg-lime-50 px-2 py-0.5 rounded">AI POWERED</span>
+                   <span className="text-[10px] font-black text-[#8A9482] bg-[#B2C9A1]/30 px-2 py-0.5 rounded">AI POWERED</span>
                  )}
               </div>
             </div>
@@ -308,7 +308,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             {isSearching && (
               <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
                  <div className="bg-white p-6 rounded-2xl shadow-2xl border border-sandstone flex flex-col items-center gap-4 animate-in zoom-in">
-                    <RefreshIcon className="w-8 h-8 text-lime-600 animate-spin" />
+                    <RefreshIcon className="w-8 h-8 text-[#8A9482] animate-spin" />
                     <p className="text-xs font-black text-earth-dark uppercase tracking-widest">Analyzing Neural Vectors...</p>
                  </div>
               </div>
@@ -326,7 +326,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   {filteredResults.map(chat => (
                     <div key={chat.id} className="relative">
                        {isSemantic && semanticScores[chat.id] !== undefined && (
-                         <div className="absolute -top-2 -right-2 z-10 bg-lime-500 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-lg">
+                         <div className="absolute -top-2 -right-2 z-10 bg-[#394239] text-white text-[9px] font-black px-2 py-0.5 rounded shadow-lg">
                            {Math.round(semanticScores[chat.id] * 100)}% Match
                          </div>
                        )}

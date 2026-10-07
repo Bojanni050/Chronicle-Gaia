@@ -28,7 +28,7 @@ const SourceBadge: React.FC<{ source: string; type: ItemType }> = ({ source, typ
 
   return (
     <div className="flex items-center gap-1.5">
-      <div className={`p-1 rounded-md ${isNote ? 'bg-amber-100 text-amber-600' : 'bg-lime-100 text-lime-600'}`}>
+      <div className={`p-1 rounded-md ${isNote ? 'bg-[#D27D66]/15 text-[#D27D66]' : 'bg-[#B2C9A1]/20 text-[#2C3E21]'}`}>
         {renderIcon()}
       </div>
       <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${isNote ? 'bg-amber-50/50 border-amber-200/50 text-amber-700' : 'bg-sandstone/20 border-sandstone/40 text-earth-dark/70'} dark:bg-stone-800 dark:border-stone-600`}>

@@ -472,7 +472,7 @@ const App: React.FC = () => {
       
       <header className={`h-16 shrink-0 bg-warm-beige dark:bg-stone-900/90 backdrop-blur-md border-b border-sandstone dark:border-stone-800 flex items-center justify-between px-6 z-50 ${isMacOS ? 'pl-20' : ''}`}>
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard', viewingChat: null }))}>
-          <div className="bg-lime-500 p-2 rounded-xl shadow-lg shadow-lime-500/20 text-white">
+          <div className="bg-[#394239] p-2 rounded-xl shadow-lg shadow-[#394239]/20 text-white">
             <DatabaseIcon />
           </div>
           <div className="flex flex-col">
@@ -509,7 +509,7 @@ const App: React.FC = () => {
             </button>
             <button 
                 onClick={() => setState(prev => ({ ...prev, isUploading: true }))}
-                className="flex items-center gap-2 bg-[#DBAA89] hover:bg-[#c69879] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm"
+                className="flex items-center gap-2 bg-[#394239] hover:bg-[#2C362C] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm"
             >
                 <PlusIcon /> Import Log
             </button>
