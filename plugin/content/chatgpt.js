@@ -10,7 +10,7 @@
  */
 (() => {
 
-  const { makeButton, exportToChronicle, buildConversation } = window.__chronicleUI;
+  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs } = window.__chronicleUI;
 
   function conversationIdFromUrl() {
     const match = location.pathname.match(/\/c\/([0-9a-f-]{16,})/i);
@@ -26,20 +26,37 @@
     return res.json();
   }
 
-  function mappingToOrderedMessages(mapping) {
-    const nodes = Object.values(mapping || {});
-    const byId = new Map(nodes.map((n) => [n.id, n]));
-    const roots = nodes.filter((n) => !n.parent || !byId.has(n.parent));
-    const ordered = [];
-    const seen = new Set();
-    const walk = (node) => {
-      if (!node || seen.has(node.id)) return;
-      seen.add(node.id);
-      if (node.message) ordered.push(node.message);
-      (node.children || []).forEach((childId) => walk(byId.get(childId)));
-    };
-    roots.forEach(walk);
-    return ordered;
+  /**
+   * Reconstrueert de actieve tak via current_node: van die node terug naar
+   * de root via parent. Zonder deze stap bevatten exports alle takken
+   * (bewerkingen/regeneraties) plat in het transcript. Zonder current_node
+   * valt de functie terug op de hele boom in DFS-volgorde.
+   */
+  function activeBranchMessages(root) {
+    const mapping = root.mapping || {};
+    const byId = new Map(Object.values(mapping).map((n) => [n.id, n]));
+    const currentId = root.current_node;
+    if (!currentId || !byId.has(currentId)) {
+      const nodes = Object.values(mapping);
+      const roots = nodes.filter((n) => !n.parent || !byId.has(n.parent));
+      const ordered = [];
+      const seen = new Set();
+      const walk = (node) => {
+        if (!node || seen.has(node.id)) return;
+        seen.add(node.id);
+        if (node.message) ordered.push(node.message);
+        (node.children || []).forEach((childId) => walk(byId.get(childId)));
+      };
+      roots.forEach(walk);
+      return ordered;
+    }
+    const branch = [];
+    let current = byId.get(currentId);
+    while (current) {
+      if (current.message) branch.unshift(current.message);
+      current = current.parent && byId.has(current.parent) ? byId.get(current.parent) : null;
+    }
+    return branch;
   }
 
   function messageText(msg) {
@@ -53,7 +70,7 @@
 
   function turnsFromApi(root) {
     const turns = [];
-    for (const msg of mappingToOrderedMessages(root.mapping)) {
+    for (const msg of activeBranchMessages(root)) {
       const role = msg?.author?.role;
       if (!role || role === 'system' || role === 'tool') continue;
       const text = messageText(msg);
@@ -61,25 +78,6 @@
       turns.push({ role: role === 'user' ? 'user' : 'assistant', text });
     }
     return turns;
-  }
-
-  /**
-   * Zet een DOM-node om naar tekst waarbij codeblokken als echte markdown-
-   * fences gemarkeerd worden (```), zodat de archive-viewer ze als codeblok
-   * rendert i.p.v. platgeslagen tekst.
-   */
-  function innerTextWithCodeFences(node) {
-    const clone = node.cloneNode(true);
-    const pres = [...clone.querySelectorAll('pre')];
-    for (const pre of pres) {
-      const code = pre.querySelector('code');
-      const text = (code || pre).innerText || '';
-      const langMatch = (code?.className || '').match(/language-([\w-]+)/);
-      const lang = langMatch ? langMatch[1] : '';
-      const fenced = '\n```' + lang + '\n' + text.replace(/\n+$/, '') + '\n```\n';
-      pre.replaceWith(document.createTextNode(fenced));
-    }
-    return clone.innerText || '';
   }
 
   function turnsFromDom() {
@@ -93,12 +91,6 @@
       turns.push({ role, text });
     }
     return turns;
-  }
-
-  function transcriptFromTurns(turns) {
-    return turns
-      .map((t) => `${t.role === 'assistant' ? 'Assistant' : 'User'}: ${t.text}`)
-      .join('\n\n');
   }
 
   async function collectConversation() {

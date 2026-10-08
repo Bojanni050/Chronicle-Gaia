@@ -25,7 +25,7 @@ plugin (content script)  →  service worker (token + retry-queue)
 4. Open de opties van de extensie: zet de listener-URL
    (standaard `http://127.0.0.1:4580`) en het token.
 5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
-   op **→ Chronicle**.
+   op **→ Chronicle** (zwevende knop rechtsboven; de bulk-knop ⇊ staat er direct onder).
 
 ## Automatische capture (fase 3)
 
@@ -112,6 +112,6 @@ als Foundation's `ingestPolicy.js`. De conversation-URL is first-class: zonder
   de turns compleet zijn.
 - De org-id van claude.ai wordt uit `localStorage.lastActiveOrg` gelezen; als
   een installatie een andere sleutel gebruikt, valt de knop terug op de DOM.
-- De automatische "elke API-call onderscheppen"-variant is bewust **niet**
-  gebouwd; deze knop-versie is robuuster en volstaat voor de
-  acceptance-test van de pijp (bouwen in fases).
+- De automatische interceptie-variant (fase 3) is inmiddels wél gebouwd —
+  zie "Automatische capture" hierboven. De knoppen blijven als fallback en
+  voor geschiedenis van vóór de installatie.

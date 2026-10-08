@@ -55,6 +55,18 @@ async function getConfig() {
   };
 }
 
+let queueWrite = Promise.resolve();
+
+/**
+ * Serialiseert alle queue-mutaties achter één promise-ketting, zodat een
+ * enqueue tijdens een flush niet meer door een setQueue(remaining) van die
+ * flush wordt weggegooid (de race die eerder items kon verliezen).
+ */
+function withQueueLock(fn) {
+  queueWrite = queueWrite.then(fn, fn);
+  return queueWrite;
+}
+
 async function getQueue() {
   const data = await chrome.storage.local.get(QUEUE_KEY);
   return data[QUEUE_KEY] || [];
@@ -64,10 +76,19 @@ async function setQueue(queue) {
   await chrome.storage.local.set({ [QUEUE_KEY]: queue.slice(-MAX_QUEUE) });
 }
 
+/**
+ * Zet een levering in de wachtrij, gedupliceerd op gespreks-URL: herhaalde
+ * transport-fouten van hetzelfde gesprek stapelden eerder tientallen kopieën
+ * op. De nieuwste versie wint (het gesprek kan groeien tussen pogingen).
+ */
 async function enqueue(conv) {
-  const queue = await getQueue();
-  queue.push({ conv, at: Date.now() });
-  await setQueue(queue);
+  return withQueueLock(async () => {
+    const queue = await getQueue();
+    const url = conv && conv.url;
+    const kept = url ? queue.filter((e) => !e.conv || e.conv.url !== url) : queue;
+    kept.push({ conv, at: Date.now() });
+    await setQueue(kept);
+  });
 }
 
 /** Levert één gesprek af. Transport-fout → queue; 4xx → definitief, niet queuen. */
@@ -109,22 +130,24 @@ async function deliver(conv) {
 }
 
 async function flushQueue(sender) {
-  const queue = await getQueue();
-  if (!queue.length) return;
-  const remaining = [];
-  let delivered = 0;
-  for (const entry of queue) {
-    const result = await deliver(entry.conv);
-    if (result.ok || result.status === 400 || result.status === 401 || result.status === 422) {
-      delivered++;
-    } else {
-      remaining.push(entry);
+  return withQueueLock(async () => {
+    const queue = await getQueue();
+    if (!queue.length) return;
+    const remaining = [];
+    let delivered = 0;
+    for (const entry of queue) {
+      const result = await deliver(entry.conv);
+      if (result.ok || result.status === 400 || result.status === 401 || result.status === 422) {
+        delivered++;
+      } else {
+        remaining.push(entry);
+      }
     }
-  }
-  await setQueue(remaining);
-  if (delivered && sender) {
-    chrome.tabs.sendMessage(sender.tab.id, { type: 'queue-flushed', delivered, remaining: remaining.length }).catch(() => {});
-  }
+    await setQueue(remaining);
+    if (delivered && sender && sender.tab) {
+      chrome.tabs.sendMessage(sender.tab.id, { type: 'queue-flushed', delivered, remaining: remaining.length }).catch(() => {});
+    }
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

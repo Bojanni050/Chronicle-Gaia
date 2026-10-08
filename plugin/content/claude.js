@@ -10,7 +10,7 @@
  */
 (() => {
 
-  const { makeButton, exportToChronicle, buildConversation } = window.__chronicleUI;
+  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs } = window.__chronicleUI;
 
   function conversationUuidFromUrl() {
     const match = location.pathname.match(/\/chat\/([0-9a-f-]{36})/i);
@@ -74,9 +74,32 @@
     return res.json();
   }
 
+  /**
+   * Reconstrueert de actieve tak: van current_leaf_message_uuid terug naar de
+   * root via parent_message_uuid. Zonder deze stap bevatten exports óók de
+   * alternatieve takken (bewerkingen/regeneraties) plat in het transcript.
+   * Zonder leaf-info (oudere API-vormen) valt de functie terug op de volledige
+   * lijst in oorspronkelijke volgorde.
+   */
+  function activeMessages(conv) {
+    const messages = conv.chat_messages || [];
+    const leaf = conv.current_leaf_message_uuid;
+    if (!leaf) return messages;
+    const byUuid = new Map(messages.map((m) => [m.uuid, m]));
+    if (!byUuid.has(leaf)) return messages;
+    const branch = [];
+    let current = leaf;
+    while (current && byUuid.has(current)) {
+      const msg = byUuid.get(current);
+      branch.unshift(msg);
+      current = msg.parent_message_uuid;
+    }
+    return branch.length ? branch : messages;
+  }
+
   function turnsFromApi(conv) {
     const turns = [];
-    for (const msg of conv.chat_messages || []) {
+    for (const msg of activeMessages(conv)) {
       let text = '';
       if (Array.isArray(msg.content)) {
         // Text-blokken zijn de kern; thinking-blokken komen er als gemarkeerde
@@ -111,26 +134,6 @@
       turns.push({ role: msg.sender === 'assistant' ? 'assistant' : 'user', text });
     }
     return turns;
-  }
-
-  /**
-   * Zet een DOM-node om naar tekst waarbij codeblokken als echte markdown-
-   * fences gemarkeerd worden (```), zodat de archive-viewer (react-markdown)
-   * ze als codeblok rendert i.p.v. platgeslagen tekst. Inline-code blijft
-   * inline; alleen echte blokken (pre/code) krijgen fences.
-   */
-  function innerTextWithCodeFences(node) {
-    const clone = node.cloneNode(true);
-    const pres = [...clone.querySelectorAll('pre')];
-    for (const pre of pres) {
-      const code = pre.querySelector('code');
-      const text = (code || pre).innerText || '';
-      const langMatch = (code?.className || '').match(/language-([\w-]+)/);
-      const lang = langMatch ? langMatch[1] : '';
-      const fenced = '\n```' + lang + '\n' + text.replace(/\n+$/, '') + '\n```\n';
-      pre.replaceWith(document.createTextNode(fenced));
-    }
-    return clone.innerText || '';
   }
 
   /**
@@ -215,14 +218,12 @@
     return turns;
   }
 
-  function transcriptFromTurns(turns) {
-    return turns
-      .map((t) => `${t.role === 'assistant' ? 'Assistant' : 'User'}: ${t.text}`)
-      .join('\n\n');
-  }
-
-  async function collectConversation() {
-    const uuid = conversationUuidFromUrl() || lastConversationUuidFromDom();
+  async function collectConversation(signalUuid) {
+    // Voorkeur: de uuid uit het intercept-signaal (het gesprek dat zojuist
+    // een antwoord kreeg), daarna de URL, dan de DOM. Navigeer je binnen
+    // de debounce-tijd weg, dan levert het signaal nog steeds het juiste
+    // gesprek i.p.v. dat van de nieuwe pagina.
+    const uuid = signalUuid || conversationUuidFromUrl() || lastConversationUuidFromDom();
     let turns = null;
     let name = null;
     let occurredAt = null;
@@ -252,7 +253,7 @@
       title: name,
       url: uuid ? `https://claude.ai/chat/${uuid}` : location.href,
       sourceProvider: 'claude',
-      occurredAt: occurredAt ? Date.parse(occurredAt) || occurredAt : undefined,
+      occurredAt: toEpochMs(occurredAt),
     });
   }
 
@@ -294,7 +295,7 @@
             title: typeof conv.name === 'string' && conv.name.trim() ? conv.name.trim() : undefined,
             url: `https://claude.ai/chat/${conv.uuid}`,
             sourceProvider: 'claude',
-            occurredAt: conv.updated_at || conv.created_at || null,
+            occurredAt: toEpochMs(conv.updated_at || conv.created_at),
           });
         } catch {
           return null; // één onbereikbaar gesprek mag de bulk niet breken
@@ -371,7 +372,7 @@
     console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
     clearTimeout(autoCaptureTimer);
     autoCaptureTimer = setTimeout(async () => {
-      const conv = await collectConversation();
+      const conv = await collectConversation(data.uuid);
       if (conv.error) {
         console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
         return;
