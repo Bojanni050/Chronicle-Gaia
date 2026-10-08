@@ -99,6 +99,19 @@
    * container. Dat is exacter dan elke testid-heuristiek — de rol staat er
    * letterlijk in.
    */
+  /**
+   * Plakte iemand een attachment-naam of hash in de chat (bv.
+   * 'ACFrOgA7...pdf'), dan staat zo'n reeks van 40+ tekens als een onleesbare
+   * blob in het archief. Die tokens worden hier leesbaar ingekort; de rest
+   * van de tekst blijft onaangetast. Geldt alleen voor de DOM-scrape — de
+   * API-route levert de echte turns en blijft verbatim.
+   */
+  const OPAQUE_TOKEN = /[A-Za-z0-9_-]{40,}/g;
+
+  function shortenOpaqueTokens(text) {
+    return text.replace(OPAQUE_TOKEN, (m) => m.slice(0, 12) + '…[' + m.length + ' tekens]');
+  }
+
   function turnsFromCoworkMarkers() {
     const headers = [...document.querySelectorAll('h2.sr-only')].filter((h) =>
       /^(you said|claude responded)/i.test((h.textContent || '').trim())
@@ -110,18 +123,21 @@
       /^computer actions available/i,
       /^use the up and down arrow keys/i,
       /^press tab/i,
+      /^allow pasting/i,
+      /^warning: don/i,
     ];
     return headers
       .map((h) => {
         const isUser = /^you said/i.test((h.textContent || '').trim());
         const container =
           h.closest('[class*="message-row"]') || h.parentElement || h;
-        const text = (container.innerText || '')
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line && !A11Y_NOISE.some((re) => re.test(line)))
-          .join('\n')
-          .trim();
+        const text = shortenOpaqueTokens(
+          (container.innerText || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line && !A11Y_NOISE.some((re) => re.test(line)))
+            .join('\n')
+        ).trim();
         return { role: isUser ? 'user' : 'assistant', text };
       })
       .filter((t, i, arr) => t.text && arr.findIndex((x) => x.text === t.text) === i);
