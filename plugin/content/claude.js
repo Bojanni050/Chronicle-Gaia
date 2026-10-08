@@ -66,7 +66,7 @@
   async function fetchConversation(uuid) {
     const org = await resolveOrgId();
     if (!org) throw new Error('no org');
-    const res = await fetch(`/api/organizations/${org}/chat_conversations/${uuid}?tree=True&rendering=tree`, {
+    const res = await fetch(`/api/organizations/${org}/chat_conversations/${uuid}?tree=True&rendering_mode=messages&render_all_tools=true`, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
     });
@@ -237,23 +237,36 @@
     const list = await collectAllConversations();
     const out = [];
     let i = 0;
-    for (const conv of list) {
-      i++;
-      onProgress && onProgress(i, list.length, conv.name || '');
-      try {
-        const full = await fetchConversation(conv.uuid);
-        const turns = turnsFromApi(full);
-        if (!turns.length) continue;
-        out.push(buildConversation({
-          content: transcriptFromTurns(turns),
-          turns,
-          title: typeof conv.name === 'string' && conv.name.trim() ? conv.name.trim() : undefined,
-          url: `https://claude.ai/chat/${conv.uuid}`,
-          sourceProvider: 'claude',
-          occurredAt: conv.updated_at || conv.created_at || null,
-        }));
-      } catch {
-        // één onbereikbaar gesprek mag de bulk niet breken
+    // In batches van 3 met 200ms pauze — het patroon van
+    // agoramachina/claude-exporter: klein genoeg om de API niet te
+    // overbelasten (429's), snel genoeg om niet eeuwig te duren.
+    const BATCH = 3;
+    for (let b = 0; b < list.length; b += BATCH) {
+      const batch = list.slice(b, b + BATCH);
+      const results = await Promise.all(batch.map(async (conv) => {
+        try {
+          const full = await fetchConversation(conv.uuid);
+          const turns = turnsFromApi(full);
+          if (!turns.length) return null;
+          return buildConversation({
+            content: transcriptFromTurns(turns),
+            turns,
+            title: typeof conv.name === 'string' && conv.name.trim() ? conv.name.trim() : undefined,
+            url: `https://claude.ai/chat/${conv.uuid}`,
+            sourceProvider: 'claude',
+            occurredAt: conv.updated_at || conv.created_at || null,
+          });
+        } catch {
+          return null; // één onbereikbaar gesprek mag de bulk niet breken
+        }
+      }));
+      for (const conv of results) {
+        i++;
+        if (conv) out.push(conv);
+        onProgress && onProgress(i, list.length, conv ? (conv.title || '') : '—');
+      }
+      if (b + BATCH < list.length) {
+        await new Promise((r) => setTimeout(r, 200));
       }
     }
     return out;

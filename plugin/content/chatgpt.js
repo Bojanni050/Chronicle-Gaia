@@ -136,23 +136,35 @@
     const list = await collectAllConversations();
     const out = [];
     let i = 0;
-    for (const conv of list) {
-      i++;
-      onProgress && onProgress(i, list.length, conv.title || '');
-      try {
-        const root = await fetchConversation(conv.id);
-        const turns = turnsFromApi(root);
-        if (!turns.length) continue;
-        out.push(buildConversation({
-          content: transcriptFromTurns(turns),
-          turns,
-          title: typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : undefined,
-          url: `https://chatgpt.com/c/${conv.id}`,
-          sourceProvider: 'chatgpt',
-          occurredAt: conv.update_time || conv.create_time || null,
-        }));
-      } catch {
-        // één onbereikbaar gesprek mag de bulk niet breken
+    // In batches van 3 met 200ms pauze — zelfde beschermingspatroon als de
+    // Claude-provider (overgenomen van agoramachina/claude-exporter).
+    const BATCH = 3;
+    for (let b = 0; b < list.length; b += BATCH) {
+      const batch = list.slice(b, b + BATCH);
+      const results = await Promise.all(batch.map(async (conv) => {
+        try {
+          const root = await fetchConversation(conv.id);
+          const turns = turnsFromApi(root);
+          if (!turns.length) return null;
+          return buildConversation({
+            content: transcriptFromTurns(turns),
+            turns,
+            title: typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : undefined,
+            url: `https://chatgpt.com/c/${conv.id}`,
+            sourceProvider: 'chatgpt',
+            occurredAt: conv.update_time || conv.create_time || null,
+          });
+        } catch {
+          return null; // één onbereikbaar gesprek mag de bulk niet breken
+        }
+      }));
+      for (const conv of results) {
+        i++;
+        if (conv) out.push(conv);
+        onProgress && onProgress(i, list.length, conv ? (conv.title || '') : '—');
+      }
+      if (b + BATCH < list.length) {
+        await new Promise((r) => setTimeout(r, 200));
       }
     }
     return out;
