@@ -18,6 +18,11 @@
   }
 
   function lastConversationUuidFromDom() {
+    // Alleen op een echte /chat/<uuid>-pagina: op /cowork-pagina's staat geen
+    // uuid in de URL en de sidebar-links zijn *andere* gesprekken — die als
+    // bron nemen exporteert stiekem de verkeerde chat. Daar is null de
+    // eerlijke waarde; de DOM-fallback levert dan de zichtbare inhoud.
+    if (!/\/chat\//.test(location.pathname)) return null;
     const link = document.querySelector('a[href*="/chat/"]');
     if (!link) return null;
     const match = (link.getAttribute('href') || '').match(/\/chat\/([0-9a-f-]{36})/i);

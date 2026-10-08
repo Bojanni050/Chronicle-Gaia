@@ -163,8 +163,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   const title = cleanString(raw.title) || (content.slice(0, 80) || 'Untitled conversation');
   const sourceProvider = toSourceProvider(raw.sourceProvider) || 'other';
   const url = cleanString(raw.url);
-  const occurredMs = toEpochMs(raw.occurredAt);
-  const createdMs = toEpochMs(raw.createdAt) ?? occurredMs ?? now;
+  const occurredMs = toEpochMs(raw.occurredAt) ?? toEpochMs(raw.createdAt);
 
   const capture: NormalizedIngestChat['item']['capture'] = {
     sourceProvider,
@@ -173,8 +172,11 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   if (occurredMs !== undefined) capture.occurredAt = new Date(occurredMs).toISOString();
   if (url) capture.url = url;
 
-  // The Foundation payload uses exactly the raw fields the gateway allows —
-  // built by the same builder the renderer's captureToFoundation uses.
+  // Het originele gespreksmoment blijft behouden als capture.occurredAt (de
+  // tijd die naar Foundation gaat), maar de archiefregel zelf krijgt de
+  // ingest-tijd als createdAt — net als de renderer-import (handleUpload):
+  // een geïmporteerde chat staat bovenaan het archief, niet op zijn
+  // oorspronkelijke datum van maanden geleden.
   const foundationPayload = buildChatIngestPayload({
     content,
     title,
@@ -193,7 +195,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
       summary: '',
       tags: [],
       source: toSourceType(sourceProvider),
-      createdAt: createdMs,
+      createdAt: now,
       updatedAt: now,
       capture,
       foundation: { status: 'pending', at: now },
