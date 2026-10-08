@@ -34,8 +34,8 @@
     button.id = 'chronicle-export-button';
     Object.assign(button.style, {
       position: 'fixed',
-      top: '16px',
-      right: '16px',
+      bottom: '20px',
+      right: '20px',
       zIndex: '9999',
       padding: '8px 14px',
       borderRadius: '8px',
@@ -163,8 +163,8 @@
     button.id = 'chronicle-bulk-button';
     Object.assign(button.style, {
       position: 'fixed',
-      top: '56px',
-      right: '16px',
+      bottom: '56px',
+      right: '20px',
       zIndex: '9999',
       padding: '8px 14px',
       borderRadius: '8px',

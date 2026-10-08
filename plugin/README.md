@@ -25,7 +25,7 @@ plugin (content script)  →  service worker (token + retry-queue)
 4. Open de opties van de extensie: zet de listener-URL
    (standaard `http://127.0.0.1:4580`) en het token.
 5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
-   op **→ Chronicle** (zwevende knop rechtsboven; de bulk-knop ⇊ staat er direct onder).
+   op **→ Chronicle** (zwevende knop rechtsonder; de bulk-knop ⇊ staat er direct boven).
 
 ## Automatische capture (fase 3)
 
