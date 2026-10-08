@@ -63,13 +63,32 @@
     return turns;
   }
 
+  /**
+   * Zet een DOM-node om naar tekst waarbij codeblokken als echte markdown-
+   * fences gemarkeerd worden (```), zodat de archive-viewer ze als codeblok
+   * rendert i.p.v. platgeslagen tekst.
+   */
+  function innerTextWithCodeFences(node) {
+    const clone = node.cloneNode(true);
+    const pres = [...clone.querySelectorAll('pre')];
+    for (const pre of pres) {
+      const code = pre.querySelector('code');
+      const text = (code || pre).innerText || '';
+      const langMatch = (code?.className || '').match(/language-([\w-]+)/);
+      const lang = langMatch ? langMatch[1] : '';
+      const fenced = '\n```' + lang + '\n' + text.replace(/\n+$/, '') + '\n```\n';
+      pre.replaceWith(document.createTextNode(fenced));
+    }
+    return clone.innerText || '';
+  }
+
   function turnsFromDom() {
     const turns = [];
     const blocks = document.querySelectorAll('[data-message-author-role]');
     for (const block of blocks) {
       const role = block.getAttribute('data-message-author-role');
       if (role !== 'user' && role !== 'assistant') continue;
-      const text = (block.innerText || '').trim();
+      const text = innerTextWithCodeFences(block).trim();
       if (!text) continue;
       turns.push({ role, text });
     }

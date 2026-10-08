@@ -94,6 +94,26 @@
   }
 
   /**
+   * Zet een DOM-node om naar tekst waarbij codeblokken als echte markdown-
+   * fences gemarkeerd worden (```), zodat de archive-viewer (react-markdown)
+   * ze als codeblok rendert i.p.v. platgeslagen tekst. Inline-code blijft
+   * inline; alleen echte blokken (pre/code) krijgen fences.
+   */
+  function innerTextWithCodeFences(node) {
+    const clone = node.cloneNode(true);
+    const pres = [...clone.querySelectorAll('pre')];
+    for (const pre of pres) {
+      const code = pre.querySelector('code');
+      const text = (code || pre).innerText || '';
+      const langMatch = (code?.className || '').match(/language-([\w-]+)/);
+      const lang = langMatch ? langMatch[1] : '';
+      const fenced = '\n```' + lang + '\n' + text.replace(/\n+$/, '') + '\n```\n';
+      pre.replaceWith(document.createTextNode(fenced));
+    }
+    return clone.innerText || '';
+  }
+
+  /**
    * Cowork-sessies markeren elk bericht semantisch: een h2.sr-only met
    * "You said:" of "Claude responded:", binnen een class*="message-row"-
    * container. Dat is exacter dan elke testid-heuristiek — de rol staat er
@@ -132,7 +152,7 @@
         const container =
           h.closest('[class*="message-row"]') || h.parentElement || h;
         const text = shortenOpaqueTokens(
-          (container.innerText || '')
+          innerTextWithCodeFences(container)
             .split('\n')
             .map((line) => line.trim())
             .filter((line) => line && !A11Y_NOISE.some((re) => re.test(line)))
@@ -167,7 +187,7 @@
         streamer === 'false' ||
         stream === 'input' ||
         /user|human/i.test(testid);
-      const text = (block.innerText || '').trim();
+      const text = innerTextWithCodeFences(block).trim();
       if (!text) continue;
       turns.push({ role: isUser ? 'user' : 'assistant', text });
     }
