@@ -35,7 +35,8 @@ wikkelt `window.fetch` in. Het antwoordt géén inhoud — het seint alleen
 *"dit gesprek is net bijgewerkt"*:
 
 - claude.ai: na een volledig uitgelezen `POST …/chat_conversations/{uuid}/completion`
-- chatgpt.com: na een `POST /backend-api/conversation`
+- chatgpt.com: na een `POST /backend-api/conversation` of
+  `POST /backend-api/f/conversation` (OpenAI verplaatste deze route)
 
 Het provider-script (isolated world) hoort het signaal via
 `window.postMessage`, wacht 1,5s (debounce — een antwoord arriveert in

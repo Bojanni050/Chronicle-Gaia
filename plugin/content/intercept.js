@@ -14,8 +14,9 @@
  * arrayBuffer() resolveert als de stream klaar is — zodat het gesprek al
  * is gegroeid bij levering):
  *  - Claude: POST /chat_conversations/{uuid}/completion en /retry_completion
- *  - ChatGPT: POST /backend-api/conversation (exact — niet de
- *    /conversation/{id}/...-subroutes voor titelbewerkingen e.d.)
+ *  - ChatGPT: POST /backend-api/conversation (oud) en /backend-api/f/conversation
+ *    (huidige streaming-route) — niet de /prepare- en /updates-subroutes, die
+ *    accepteren geen POST.
  */
 (() => {
   if (window.__chronicleInterceptInstalled) return;
@@ -38,7 +39,14 @@
   }
 
   const CLAUDE_COMPLETION = /\/chat_conversations\/([0-9a-f-]{36})\/(completion|retry_completion)/;
-  const CHATGPT_CONVERSATION = /\/backend-api\/conversation\/?(\?|$)/;
+  // OpenAI verplaatste de send-route: /backend-api/conversation (oud) én
+  // /backend-api/f/conversation (huidige streaming-route) accepteren POST.
+  // Beide matchen; de subroutes /prepare en /updates accepteren géén POST
+  // (405), dus die kunnen hier nooit een valse sein geven.
+  const CHATGPT_CONVERSATION = /\/backend-api\/(?:f\/)?conversation(?:[/?]|$)/i;
+  // Diagnose: POST's naar /backend-api/...-conversation die we niet matchen
+  // één keer loggen, zodat een volgende endpoint-wijziging zichtbaar is.
+  const CHATGPT_SEEN = new Set();
 
   function signal(provider, uuid) {
     console.info('[Chronicle] intercept:', provider, uuid || '');
@@ -74,6 +82,13 @@
       if (CHATGPT_CONVERSATION.test(url)) {
         signal('chatgpt');
         return res;
+      }
+      // Onbekende conversation-POST: log één keer per unieke URL. Puur
+      // diagnostisch — als OpenAI de route opnieuw verplaatst, staat hier de
+      // nieuwe URL in de console.
+      if (/\/backend-api\/[^?]*conversation/i.test(url) && !CHATGPT_SEEN.has(url)) {
+        CHATGPT_SEEN.add(url);
+        console.info('[Chronicle] chatgpt POST niet gematcht (nieuwe route?):', method, url);
       }
     } catch {
       // interceptie mag de pagina nooit breken

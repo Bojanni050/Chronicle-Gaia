@@ -18,13 +18,32 @@
   }
 
   async function fetchConversation(id) {
-    const res = await fetch(`/backend-api/conversation/${id}`, {
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
-    });
-    if (!res.ok) throw new Error(`chatgpt API ${res.status}`);
-    return res.json();
+    // De detail-route is in de loop der tijd verschoven; probeer de bekende
+    // vormen na elkaar en neem de eerste die een mapping-tree teruggeeft.
+    const paths = [
+      `/backend-api/conversation/${id}`,
+      `/backend-api/conversations/${id}`,
+    ];
+    let lastError = null;
+    for (const path of paths) {
+      try {
+        const res = await fetch(path, {
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          lastError = new Error(`chatgpt API ${res.status} (${path})`);
+          continue;
+        }
+        const body = await res.json();
+        if (body && body.mapping) return body;
+        lastError = new Error(`chatgpt API onverwachte vorm (${path})`);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('chatgpt API onbereikbaar');
   }
 
   /**
@@ -105,7 +124,8 @@
         turns = turnsFromApi(root);
         title = typeof root.title === 'string' && root.title.trim() ? root.title.trim() : null;
         occurredAt = root.update_time || root.create_time || null;
-      } catch {
+      } catch (err) {
+        console.info('[Chronicle] chatgpt API-read mislukt:', String(err && err.message ? err.message : err), '— DOM-fallback');
         turns = null; // val door naar de DOM-fallback
       }
     }

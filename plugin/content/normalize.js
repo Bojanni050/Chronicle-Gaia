@@ -199,6 +199,7 @@
       // thinking-blokken kan één groot gesprek al flink groot zijn.
       const CHUNK = 15;
       const total = conversations.length;
+      let lastReport = null;
       for (let i = 0; i < total; i += CHUNK) {
         const chunk = conversations.slice(i, i + CHUNK);
         const response = await chrome.runtime.sendMessage({
@@ -210,19 +211,16 @@
           setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 6000);
           return;
         }
+        lastReport = response.report;
         const done = Math.min(i + CHUNK, total);
         button.textContent = `⇊ geleverd ${done}/${total} • nieuw ${response.report.created} • bijgewerkt ${response.report.updated} • bekend ${response.report.duplicates} ✓`;
         await new Promise((r) => setTimeout(r, 50));
       }
-      const response = { ok: true, report: {} };
-      if (!response || !response.ok) {
-        button.textContent = '✗ bulkexport mislukt: ' + (response?.error || 'onbekende fout');
-        setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 6000);
-        return;
+      if (lastReport) {
+        setBulkProgress(button, lastReport);
+        button.textContent += ' ✓';
+        setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 8000);
       }
-      setBulkProgress(button, response.report);
-      button.textContent += ' ✓';
-      setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 8000);
     } finally {
       chrome.runtime.onMessage.removeListener(progressListener);
       button.disabled = false;

@@ -431,3 +431,35 @@
     `startResize` + window `mousemove`/`mouseup`-listeners, clamp bij
     venster-resize; sleepgreep (`cursor-col-resize`, hover-highlight) in `aside`.
   - Validatie: `vite build` ok.
+
+## 2026-10-08 (Plugin: ChatGPT auto-capture — endpoint verplaatst)
+
+- Findings: Claude werkte, ChatGPT niet. Console: interceptor actief + helper
+  geïnjecteerd, maar géén `[Chronicle] intercept: chatgpt`. Live geprobeerd tegen
+  chatgpt.com (unauth-mweb, Playwright): `POST /backend-api/conversation` → 422
+  (bestaat) én `POST /backend-api/f/conversation` → 422 (bestaat óók). De
+  interceptor matchte alleen `/backend-api/conversation`, dus de huidige
+  streaming-route `f/conversation` viel er buiten → geen sein → geen
+  auto-capture. `GET /backend-api/conversation/{id}` gaf in dezelfde sessie 404
+  (Bo's consoleregel), terwijl `GET /backend-api/conversations` 200 gaf — de
+  detail-route is dus ook niet meer betrouwbaar.
+- Conclusions:
+  - Send-route verbreden naar `/backend-api/(f/)?conversation`. Over-signaleren
+    is veilig (listener dedupt op url/contentHash, provider levert herhaald).
+  - Onbekende conversation-POST's één keer per URL loggen: dan is een volgende
+    endpoint-wijziging direct zichtbaar in de console in plaats van stil.
+  - Read-pad houdt de bewezen `/conversation/{id}` maar probeert nu ook
+    `/conversations/{id}` (bestaat, 401 zonder auth) en accepteert alleen een
+    antwoord met `mapping`; anders DOM-fallback (nu met logregel).
+- Actions:
+  - `plugin/content/intercept.js`: `CHATGPT_CONVERSATION` =
+    `/backend-api/(?:f/)?conversation(?:[/?]|$)/i`; diagnose-log voor niet-
+    gematchte `/backend-api/...conversation`-POST's; headercomment bijgewerkt.
+  - `plugin/content/chatgpt.js`: `fetchConversation` probeert twee routes en
+    eist een `mapping`-tree; API-fout wordt gelogd vóór DOM-fallback.
+  - `plugin/content/normalize.js`: bulk-samenvatting las `report: {}` (NaN);
+    gebruikt nu het laatste chunk-rapport.
+  - `plugin/manifest.json` → 0.1.2; `plugin/README.md` bijgewerkt.
+  - Validatie: `node --check` op alle plugin-JS + manifest-JSON ok.
+  - Open: Bo moet de extensie herladen en een bericht sturen; de nieuwe
+    diagnose-regel bevestigt de definitieve route.
