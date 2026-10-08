@@ -93,6 +93,40 @@
     return turns;
   }
 
+  /**
+   * Cowork-sessies markeren elk bericht semantisch: een h2.sr-only met
+   * "You said:" of "Claude responded:", binnen een class*="message-row"-
+   * container. Dat is exacter dan elke testid-heuristiek — de rol staat er
+   * letterlijk in.
+   */
+  function turnsFromCoworkMarkers() {
+    const headers = [...document.querySelectorAll('h2.sr-only')].filter((h) =>
+      /^(you said|claude responded)/i.test((h.textContent || '').trim())
+    );
+    if (!headers.length) return [];
+    const A11Y_NOISE = [
+      /^you said/i,
+      /^claude responded/i,
+      /^computer actions available/i,
+      /^use the up and down arrow keys/i,
+      /^press tab/i,
+    ];
+    return headers
+      .map((h) => {
+        const isUser = /^you said/i.test((h.textContent || '').trim());
+        const container =
+          h.closest('[class*="message-row"]') || h.parentElement || h;
+        const text = (container.innerText || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !A11Y_NOISE.some((re) => re.test(line)))
+          .join('\n')
+          .trim();
+        return { role: isUser ? 'user' : 'assistant', text };
+      })
+      .filter((t, i, arr) => t.text && arr.findIndex((x) => x.text === t.text) === i);
+  }
+
   function turnsFromDom() {
     const turns = [];
     // Vier lagen, breedst laatst: chat-pagina-testids → streamer/font-
@@ -145,6 +179,10 @@
       } catch {
         turns = null; // val door naar de DOM-fallback
       }
+    }
+    if (!turns || !turns.length) {
+      turns = turnsFromCoworkMarkers();
+      console.info('[Chronicle] cowork-markers:', turns.length, 'berichten');
     }
     if (!turns || !turns.length) {
       turns = turnsFromDom();
