@@ -243,6 +243,7 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
   }
 
   await insertChatRow(pool, normalized.item);
+  scheduleTitleEnrichment(pool, normalized.item.id, getMainWindow);
   const result = await captureToFoundation(normalized.foundationPayload, resolveFoundationConfig);
   const foundation = result.ok
     ? { status: 'sent', providerConversationId: result.providerConversationId, id: result.id, at: now }
@@ -275,6 +276,85 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
       providerConversationId: result.providerConversationId,
     },
   };
+}
+
+/**
+ * Verrijkt een net geïngest gesprek achteraf met een AI-titel (plus summary
+ * en tags): dezelfde Gemini-flow als de handmatige import (analyze-content),
+ * maar dan pas ~60s na de levering — het gesprek groeit vaak nog, en de
+ * auto-capture levert daarna nieuwe versies; de titel wordt dan één keer
+ * gezet (en bij latere updates alleen als er nog geen AI-titel stond).
+ */
+function scheduleTitleEnrichment(pool, chatId, getMainWindow) {
+  setTimeout(async () => {
+    try {
+      const res = await pool.query('SELECT title, content FROM chats WHERE id = $1', [chatId]);
+      if (!res.rows.length) return; // verwijderd in de tussentijd
+      const row = res.rows[0];
+      const apiKey = resolveGeminiKeyForIngest();
+      if (!apiKey) return; // geen key: de eerste-zin-titel blijft gewoon staan
+      const { GoogleGenAI, Type } = require('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = 'Summarize this AI conversation. Suggest a title of 3 to 10 words and relevant tags.';
+      const response = await ai.models.generateContent({
+        model: 'gemini-flash-latest',
+        contents: { parts: [{ text: String(row.content || '').substring(0, 10000) }, { text: prompt }] },
+        config: {
+          systemInstruction: `You are a professional digital archivist.
+Return a JSON object with:
+1. "summary": A clear, high-level, one-sentence summary.
+2. "tags": An array of 3-6 relevant, lowercase, single-word tags.
+3. "suggestedTitle": A descriptive title of 3 to 10 words that captures the main topic of the conversation.`,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+              suggestedTitle: { type: Type.STRING },
+            },
+            required: ['summary', 'tags', 'suggestedTitle'],
+          },
+        },
+      });
+      const meta = JSON.parse(response.text || '{}');
+      if (!meta.suggestedTitle) return;
+      await pool.query('UPDATE chats SET title = $1, summary = $2, tags = $3 WHERE id = $4', [
+        meta.suggestedTitle,
+        meta.summary || '',
+        JSON.stringify(meta.tags || []),
+        chatId,
+      ]);
+      notifyRenderer(getMainWindow, { id: chatId, action: 'enriched', title: meta.suggestedTitle });
+    } catch (err) {
+      console.error('[Chronicle] title enrichment failed:', err.message || err);
+    }
+  }, 60 * 1000);
+}
+
+/** De Gemini-key staat in .env.local — dezelfde resolutie als analyze-content. */
+function resolveGeminiKeyForIngest() {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    if (process.env.API_KEY) return process.env.API_KEY;
+    const candidates = [
+      path.join(__dirname, '..', '.env.local'),
+      path.join(process.cwd(), '.env.local'),
+    ];
+    for (const file of candidates) {
+      try {
+        const text = fs.readFileSync(file, 'utf8');
+        const m = text.match(/^\s*API_KEY\s*=\s*(.*)\s*$/m);
+        if (m) return m[1].replace(/^["']|["']$/g, '');
+      } catch {
+        // volgende kandidaat
+      }
+    }
+  } catch {
+    // geen key beschikbaar
+  }
+  return null;
 }
 
 function notifyRenderer(getMainWindow, payload) {
