@@ -560,3 +560,19 @@
   - `plugin/manifest.json` → 0.2.1; `plugin/README.md` bijgewerkt.
   - Validatie: `node --check` ok.
   - Open: herladen; de DOM-diagnose-regel vertelt of de selectors nog kloppen.
+
+## 2026-10-08 (Plugin: Gemini werkt — bevestigd)
+
+- Findings: Na herladen vuurde de keten zoals bedoeld: `[Chronicle] intercept:
+  gemini` → `auto-capture: levering — 8 berichten` →
+  `{"ok":true,"action":"create"}` en daarna `action:"update"`. De
+  DOM-selectors kloppen (8 turns). De `gemini DOM-diagnose: 0 containers` hoorde
+  bij de lege `/app`-pagina vóór er een gesprek was — correct gedrag.
+- Conclusions:
+  - De MutationObserver is de juiste basis voor Gemini; de netwerkroute
+    (StreamGenerate) is onbetrouwbaar. Selectors uit gemini-chat-exporter
+    werken.
+  - De console ruis (`m=LQaXg?wli=BardChatUi…`) is Gemini's eigen wasm-logging,
+    niet van de plugin.
+- Actions: geen codewijziging; walkthrough bijgewerkt.
+  - Plugin-status: Claude, ChatGPT én Gemini werken.
