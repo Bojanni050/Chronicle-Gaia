@@ -25,6 +25,7 @@ declare global {
       getExecutablePath: () => Promise<string>;
       saveDatabase: (data: any) => Promise<boolean>;
       loadDatabase: () => Promise<any>;
+      clearDatabase: () => Promise<boolean>;
       addLink: (fromId: string, toId: string, type?: string) => Promise<boolean>;
       removeLink: (fromId: string, toId: string) => Promise<boolean>;
       loadLinks: () => Promise<Link[]>;
@@ -325,7 +326,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef, attachmentRefs?: AttachmentRef[]) => {
+  const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef, attachmentRefs?: AttachmentRef[], silent = false): 'added' | 'updated' | 'duplicate' => {
     const now = Date.now();
     const contentHash = foundationContentHash(content);
     // The conversation's own moment (carried by the export as capture.occurredAt)
@@ -346,8 +347,8 @@ const App: React.FC = () => {
       const identical = (existing.contentHash || foundationContentHash(existing.content)) === contentHash;
       if (identical) {
         // Same chat, same content: do not import a duplicate.
-        setImportNotice({ kind: 'duplicate', title: existing.title });
-        return;
+        if (!silent) setImportNotice({ kind: 'duplicate', title: existing.title });
+        return 'duplicate';
       }
       // Same chat, grown or changed: update in place, then re-capture so Gaia
       // sees the newer version too.
@@ -366,10 +367,10 @@ const App: React.FC = () => {
         updatedAt: now,
       };
       setState(prev => ({ ...prev, chats: prev.chats.map(c => c.id === existing.id ? updated : c), isUploading: false, viewingChat: updated, viewMode: 'archive' }));
-      setImportNotice({ kind: 'updated', title: updated.title });
+      if (!silent) setImportNotice({ kind: 'updated', title: updated.title });
       if (sourceFileRef) void captureSourceFile(updated, sourceFileRef);
       if (capture) void captureToFoundation(updated, attachmentRefs);
-      return;
+      return 'updated';
     }
 
     const newChat: ChatEntry = {
@@ -390,13 +391,16 @@ const App: React.FC = () => {
     // images that belong to it.
     if (sourceFileRef) void captureSourceFile(newChat, sourceFileRef);
     if (capture) void captureToFoundation(newChat, attachmentRefs);
+    return 'added';
   };
 
   // Bulk import from the native (Electron) picker: one entry per conversation,
   // each run through the same dedup + Foundation-capture path as any upload.
+  // Silent: the per-chat toast is replaced by one summary in the settings modal.
   const handleNativeImport = (chats: any[]) => {
+    const summary = { added: 0, updated: 0, duplicate: 0 };
     for (const chat of chats) {
-      handleUpload(
+      const outcome = handleUpload(
         chat.content,
         chat.source,
         chat.title,
@@ -405,9 +409,14 @@ const App: React.FC = () => {
         chat.fileName || chat.title,
         chat.embedding,
         chat.assets,
-        chat.capture
+        chat.capture,
+        undefined,
+        undefined,
+        true
       );
+      summary[outcome]++;
     }
+    return summary;
   };
 
   const handleRetryCapture = (chat: ChatEntry) => {
@@ -445,7 +454,12 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
+    // Delete for real before clearing the view, otherwise the rows reload on the
+    // next launch and the archive looks like it was never wiped.
+    if (window.electronAPI?.clearDatabase) {
+      await window.electronAPI.clearDatabase();
+    }
     setState(prev => ({ ...prev, chats: [], viewingChat: null, links: [] }));
   };
 

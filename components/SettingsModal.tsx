@@ -12,7 +12,7 @@ interface SettingsModalProps {
   onSave: (settings: Settings) => void;
   onBackup: () => void;
   onClearAll: () => void;
-  onNativeImport?: (chats: any[]) => void;
+  onNativeImport?: (chats: any[]) => { added: number; updated: number; duplicate: number } | void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -29,6 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'ai' | 'mcp'>('general');
   const [exePath, setExePath] = useState<string>('');
+  const [importFeedback, setImportFeedback] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -76,20 +77,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleNativeImport = async () => {
     if (!window.electronAPI) return;
+    setImportFeedback(null);
     // Dedup against what's really in the archive (the Electron DB), not the
     // stale localStorage key the renderer no longer writes in native mode.
     const existing = await window.electronAPI.loadDatabase() || [];
     const existingIds = existing.map((c: any) => c.id);
     const result = await window.electronAPI.importChats(existingIds);
+    if (result.cancelled) return;
     const missing = result.missing?.length ? ` Not downloaded: ${result.missing.join(', ')}.` : '';
-    if (result.success && result.chats.length > 0) {
-      onNativeImport?.(result.chats);
-      alert(`Successfully imported ${result.chats.length} chats! (Skipped ${result.skipped} duplicates)${missing}`);
-    } else if (result.success) {
-      alert(`No new conversations found to import.${missing}`);
-    } else if (result.error) {
-      alert(`Import error: ${result.error}`);
+    if (!result.success) {
+      setImportFeedback({ tone: 'error', text: `Import failed: ${result.error || 'unknown error'}` });
+      return;
     }
+    // The renderer decides what is actually new (dedup on url/content), so the
+    // summary comes from onNativeImport, not from the count the main process saw.
+    const summary = onNativeImport?.(result.chats) || { added: 0, updated: 0, duplicate: 0 };
+    if (summary.added === 0 && summary.updated === 0) {
+      setImportFeedback({
+        tone: 'warn',
+        text: `Nothing new to import.${summary.duplicate ? ` ${summary.duplicate} already in your archive.` : ''}${missing}`,
+      });
+      return;
+    }
+    const parts = [`${summary.added} chat${summary.added === 1 ? '' : 's'} imported`];
+    if (summary.updated) parts.push(`${summary.updated} updated`);
+    if (summary.duplicate) parts.push(`${summary.duplicate} already in your archive`);
+    setImportFeedback({ tone: 'ok', text: `${parts.join(', ')}.${missing}` });
   };
 
   return (
@@ -162,6 +175,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button onClick={onBackup} className="col-span-2 flex items-center justify-center gap-2 py-3 bg-sage-green text-white rounded-xl text-xs font-bold shadow-lg">Export Archive (Native/JSON)</button>
                   <button onClick={() => setShowClearConfirm(true)} className="col-span-2 flex items-center justify-center gap-2 py-3 text-terracotta text-xs font-bold hover:underline">Wipe All Data</button>
                 </div>
+                {importFeedback && (
+                  <div className={`mt-3 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs font-bold ${
+                    importFeedback.tone === 'ok'
+                      ? 'bg-sage-green/10 border-sage-green/40 text-earth-dark dark:text-slate-100'
+                      : importFeedback.tone === 'warn'
+                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                        : 'bg-terracotta/10 border-terracotta/40 text-terracotta'
+                  }`}>
+                    <span className="not-italic leading-relaxed">{importFeedback.text}</span>
+                    <button onClick={() => setImportFeedback(null)} className="shrink-0 text-moss-brown hover:text-earth-dark dark:hover:text-white" aria-label="Dismiss"><XIcon /></button>
+                  </div>
+                )}
               </section>
             </>
           )}

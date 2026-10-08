@@ -325,6 +325,21 @@ ipcMain.handle('load-database', async () => {
   }
 });
 
+// Wipe the archive for real. The confirm dialog promises "permanent", so this
+// has to remove the rows — a renderer-only clear silently came back on the next
+// launch, which made dedup look wrong on an "empty" database. Foundation/Gaia is
+// untouched (Chronicle owns only its own copy).
+ipcMain.handle('clear-database', async () => {
+  try {
+    await pool.query('DELETE FROM chats');
+    await pool.query('DELETE FROM links');
+    return true;
+  } catch (err) {
+    console.error('[Chronicle] Clear Error:', err);
+    return false;
+  }
+});
+
 ipcMain.handle('load-links', async () => {
   try {
     const res = await pool.query('SELECT from_id, to_id, link_type, created_at FROM links');

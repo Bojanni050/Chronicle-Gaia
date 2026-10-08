@@ -381,3 +381,34 @@
   - `utils/captureIngest.test.ts`: +2 tests voor `archiveTimestamps` (met/zonder
     moment).
   - Validatie: 95 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-08 (Echte wipe + in-app importmelding)
+
+- Findings:
+  - Bo kreeg na import op een "lege" database "Already in your archive". `SELECT
+    count(*) FROM chats` gaf **545** rijen: de database was niet leeg.
+  - Oorzaak: "Wipe All Data" deed alleen `setState({ chats: [] })` — er was geen
+    DELETE. De knop belooft "This action is permanent", maar de rijen kwamen bij
+    de volgende start gewoon terug (net als `archived`, maar hier is wissen wél
+    de bedoeling). De dedup op de import was dus correct.
+  - De importmelding was een browser-`alert()` in `SettingsModal`, buiten de
+    app-stijl (Bo's tweede punt). Daarnaast toonde de App-toast tijdens een bulk
+    alleen de laatste per-chat-uitslag.
+- Conclusions:
+  - Wipe moet écht uit Postgres verwijderen (Chronicle's eigen kopie; Gaia
+    onaangeroerd — consistent met `capture-chronicle.md`).
+  - Importresultaat in de app-stijl tonen, en de bulk als één samenvatting i.p.v.
+    een reeks per-chat-toasts. De renderer bepaalt wat nieuw is (url/hash-dedup),
+    dus de telling komt uit `handleUpload`, niet uit het aantal dat het
+    main-proces zag.
+- Actions:
+  - `electron-main.js`: nieuw `clear-database` (`DELETE FROM chats` + `links`);
+    `electron-preload.js` + `App.tsx`-type: `clearDatabase`.
+  - `App.tsx`: `handleClearAll` async en roept `clearDatabase()` aan vóór het
+    leegmaken van de state. `handleUpload` geeft nu `'added' | 'updated' |
+    'duplicate'` terug en heeft een `silent`-vlag; `handleNativeImport` telt de
+    uitkomsten en geeft een samenvatting terug, zonder losse toasts.
+  - `components/SettingsModal.tsx`: `alert()` vervangen door een gestylede
+    melding (sagegroen/amber/terracotta) onder Data Management; prop geeft de
+    samenvatting door.
+  - Validatie: 95 tests groen, `vite build` ok, `node --check` op main + preload ok.

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getExecutablePath: () => ipcRenderer.invoke('get-executable-path'),
   saveDatabase: (data) => ipcRenderer.invoke('save-database', data),
   loadDatabase: () => ipcRenderer.invoke('load-database'),
+  clearDatabase: () => ipcRenderer.invoke('clear-database'),
   addLink: (fromId, toId, type) => ipcRenderer.invoke('add-link', { fromId, toId, type }),
   removeLink: (fromId, toId) => ipcRenderer.invoke('remove-link', { fromId, toId }),
   loadLinks: () => ipcRenderer.invoke('load-links'),
