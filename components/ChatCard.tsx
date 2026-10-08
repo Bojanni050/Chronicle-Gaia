@@ -39,7 +39,7 @@ const SourceBadge: React.FC<{ source: string; type: ItemType }> = ({ source, typ
 };
 
 export const ChatCard: React.FC<ChatCardProps> = ({ chat, onClick, isActive, onTagClick, activeRelatedTags = [] }) => {
-  const dateStr = new Date(chat.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const dateStr = new Date(chat.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const isNote = chat.type === ItemType.NOTE;
 
   return (

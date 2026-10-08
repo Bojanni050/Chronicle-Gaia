@@ -576,3 +576,10 @@
     niet van de plugin.
 - Actions: geen codewijziging; walkthrough bijgewerkt.
   - Plugin-status: Claude, ChatGPT én Gemini werken.
+
+## 2026-10-08 (Jaartal op de chatkaart)
+
+- Findings: De datum op de chatkaart toonde alleen "24 dec", zonder jaartal.
+- Conclusions: `year: 'numeric'` toegevoegd — nu "24 dec 2025". Geldt voor de
+  kaart; er is geen tweede plek met deze maand/dag-only formattering.
+- Actions: `components/ChatCard.tsx` (dateStr-options); `vite build` ok.
