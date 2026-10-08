@@ -27,6 +27,20 @@ plugin (content script)  →  service worker (token + retry-queue)
 5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
    op **→ Chronicle**.
 
+## Bulk-export
+
+De tweede knop — **⇊ Alles naar Chronicle** (onder de gewone knop) — haalt de
+volledige gesprekkenlijst op via de interne API van de provider (alle pagina's)
+en levert elk gesprek af alsof je de gewone knop gebruikte. De listener dedupt
+per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
+`duplicate` (of `update` bij gegroeide gesprekken) en levert niets nieuws.
+
+- Claude: `GET /api/organizations/{org}/chat_conversations` (cursor-paginering)
+- ChatGPT: `GET /backend-api/conversations` (offset-paginering)
+- Voortgang staat op de knop: `⇊ 12/140 • nieuw 12 • bijgewerkt 0 • bekend 0`
+- Eén onbereikbaar gesprek breekt de run niet; mislukte leveringen worden
+  apart geteld (en transport-fouten gaan in de retry-queue, zoals altijd)
+
 ## Knop-statussen
 
 | Weergave | Betekenis |

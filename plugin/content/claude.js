@@ -216,6 +216,68 @@
     });
   }
 
+  async function collectAllConversations() {
+    const org = await resolveOrgId();
+    if (!org) return [];
+    const conversations = [];
+    let cursor = null;
+    // De gesprekkenlijst is gepagineerd; wandel alle pagina's af.
+    do {
+      const url = `/api/organizations/${org}/chat_conversations?limit=100${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`claude conversations API ${res.status}`);
+      const body = await res.json();
+      for (const conv of body.chat_conversations || []) conversations.push(conv);
+      cursor = body.cursor || null;
+    } while (cursor);
+    return conversations;
+  }
+
+  async function collectBulkConversations(onProgress) {
+    const list = await collectAllConversations();
+    const out = [];
+    let i = 0;
+    for (const conv of list) {
+      i++;
+      onProgress && onProgress(i, list.length, conv.name || '');
+      try {
+        const full = await fetchConversation(conv.uuid);
+        const turns = turnsFromApi(full);
+        if (!turns.length) continue;
+        out.push(buildConversation({
+          content: transcriptFromTurns(turns),
+          turns,
+          title: typeof conv.name === 'string' && conv.name.trim() ? conv.name.trim() : undefined,
+          url: `https://claude.ai/chat/${conv.uuid}`,
+          sourceProvider: 'claude',
+          occurredAt: conv.updated_at || conv.created_at || null,
+        }));
+      } catch {
+        // één onbereikbaar gesprek mag de bulk niet breken
+      }
+    }
+    return out;
+  }
+
+  const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
+    const ui = window.__chronicleUI;
+    try {
+      bulkButton.textContent = '⇊ lijst ophalen…';
+      const conversations = await collectBulkConversations((i, total, name) => {
+        bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}`;
+      });
+      if (!conversations.length) {
+        bulkButton.textContent = '✗ geen gesprekken gevonden';
+        setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 4000);
+        return;
+      }
+      await ui.exportManyToChronicle(bulkButton, conversations);
+    } catch (err) {
+      bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
+      setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
+    }
+  });
+
   const floatingButton = makeButton(() => {
     // Directe feedback, vóór async werk: als de klik iets doet, zie je het meteen.
     window.__chronicleUI.setButtonState(floatingButton, 'busy');

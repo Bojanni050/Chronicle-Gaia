@@ -93,12 +93,71 @@
     });
   }
 
+  /** Tweede knop: alles tegelijk (bulk). De provider levert de gesprekkenlijst. */
+  function makeBulkButton(onClick) {
+    const existing = document.getElementById('chronicle-bulk-button');
+    if (existing) existing.remove();
+    const button = document.createElement('button');
+    button.id = 'chronicle-bulk-button';
+    Object.assign(button.style, {
+      position: 'fixed',
+      top: '56px',
+      right: '16px',
+      zIndex: '9999',
+      padding: '8px 14px',
+      borderRadius: '8px',
+      border: '1px solid rgba(0,0,0,0.15)',
+      background: '#fefef9',
+      color: '#1c1917',
+      font: '13px system-ui, sans-serif',
+      cursor: 'pointer',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+    });
+    button.textContent = '⇊ Alles naar Chronicle';
+    button.addEventListener('click', onClick);
+    document.documentElement.appendChild(button);
+    return button;
+  }
+
+  function setBulkProgress(button, report) {
+    const done = report.created + report.updated + report.duplicates + report.failed + report.queued;
+    button.textContent = `⇊ ${done}/${report.total} • nieuw ${report.created} • bijgewerkt ${report.updated} • bekend ${report.duplicates}${report.failed ? ' • mislukt ' + report.failed : ''}${report.queued ? ' • wachtrij ' + report.queued : ''}`;
+  }
+
+  async function exportManyToChronicle(button, conversations) {
+    button.disabled = true;
+    button.textContent = `⇊ 0/${conversations.length}…`;
+    const progressListener = (message) => {
+      if (message && message.type === 'chronicle-bulk-progress') setBulkProgress(button, message.report);
+    };
+    chrome.runtime.onMessage.addListener(progressListener);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'chronicle-export-many',
+        conversations,
+      });
+      if (!response || !response.ok) {
+        button.textContent = '✗ bulkexport mislukt: ' + (response?.error || 'onbekende fout');
+        setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 6000);
+        return;
+      }
+      setBulkProgress(button, response.report);
+      button.textContent += ' ✓';
+      setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 8000);
+    } finally {
+      chrome.runtime.onMessage.removeListener(progressListener);
+      button.disabled = false;
+    }
+  }
+
   window.__chronicleUI = {
     setButtonState,
     makeButton,
     exportToChronicle,
+    exportManyToChronicle,
     buildConversation,
     bindToolbarClick,
+    makeBulkButton,
   };
   console.info('[Chronicle] content helper geinjecteerd op', location.host);
 })();

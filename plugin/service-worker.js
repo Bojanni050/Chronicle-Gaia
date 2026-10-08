@@ -136,7 +136,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       const result = await deliver(message.conversation);
+      // Eén levering is een goede moment om ook eerder vastgelopen
+      // transport-fouten opnieuw te proberen.
+      flushQueue(sender).catch(() => {});
       sendResponse(result);
+      return;
+    }
+    if (message.type === 'chronicle-export-many') {
+      const report = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0 };
+      const conversations = Array.isArray(message.conversations) ? message.conversations : [];
+      report.total = conversations.length;
+      const progress = () => {
+        if (sender && sender.tab) {
+          chrome.tabs.sendMessage(sender.tab.id, { type: 'chronicle-bulk-progress', report }).catch(() => {});
+        }
+      };
+      for (const conv of conversations) {
+        const invalid = validateConversation(conv);
+        if (invalid) {
+          report.failed++;
+          continue;
+        }
+        const result = await deliver(conv);
+        if (!result.ok && result.queued) report.queued++;
+        else if (!result.ok) report.failed++;
+        else if (result.action === 'update') report.updated++;
+        else if (result.action === 'duplicate') report.duplicates++;
+        else report.created++;
+        progress();
+      }
+      await flushQueue(sender).catch(() => {});
+      sendResponse({ ok: true, report });
       return;
     }
     if (message.type === 'chronicle-ping') {
