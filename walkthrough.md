@@ -463,3 +463,28 @@
   - Validatie: `node --check` op alle plugin-JS + manifest-JSON ok.
   - Open: Bo moet de extensie herladen en een bericht sturen; de nieuwe
     diagnose-regel bevestigt de definitieve route.
+
+## 2026-10-08 (Plugin: ChatGPT-send seint nu, read-route + auth)
+
+- Findings: Na de interceptor-fix verscheen `[Chronicle] intercept: chatgpt` +
+  `auto-capture signaal`, maar het uitlezen faalde: `GET
+  /backend-api/conversation/{id}` → 404 en `GET /backend-api/conversations/{id}`
+  → 401; de DOM-fallback vond 0 berichten. De 401 op de meervoud-route is de
+  aanwijzing: de ChatGPT-API gate't `/backend-api` op een Bearer-token, niet op
+  cookies alleen.
+- Conclusions:
+  - Auth-header toevoegen zoals de bewezen exporter (pionxzh): token uit
+    `/api/auth/session` → `Authorization` + `X-Authorization`. Cookies blijven
+    als fallback als de sessie niet leesbaar is.
+  - Detailrespons kan direct de mapping zijn of onder `conversation` zitten;
+    `mappingRoot` accepteert beide en weigert de rest (dan DOM-fallback).
+  - Diagnose verbreed: élke conversation-request (elke methode, bazaar/ads
+    uitgezonderd) één keer loggen, zodat ook een read-routewijziging zichtbaar is.
+- Actions:
+  - `plugin/content/chatgpt.js`: `authHeaders()` + `mappingRoot()`; probeert
+    `/conversation/{id}` dan `/conversations/{id}` met auth.
+  - `plugin/content/intercept.js`: send-sein alleen op POST, daarnaast
+    once-per-URL diagnose voor GET én POST conversation-requests.
+  - `plugin/manifest.json` → 0.1.3; `plugin/README.md` bijgewerkt.
+  - Validatie: `node --check` ok. Open: herladen + testen; bij falen geeft
+    `chatgpt request gezien:` de route die de pagina zelf wél gebruikt.

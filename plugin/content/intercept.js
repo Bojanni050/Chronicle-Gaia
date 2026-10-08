@@ -67,28 +67,32 @@
     try {
       const url = requestUrl(args);
       const method = requestMethod(args);
-      if (!/post/i.test(method)) return res;
-
-      const claudeMatch = url.match(CLAUDE_COMPLETION);
-      if (claudeMatch) {
-        // Direct sein: "stream volledig uitgelezen" bleek niet waarneembaar
-        // (de annuleert de stream na het laatste event, clone().arrayBuffer()
-        // resolveert dan nooit of rejecteert stil). De provider-kant lost het
-        // antwoord-timing probleem op met herhalende levering + listener-dedup.
-        signal('claude', claudeMatch[1]);
-        return res;
+      if (/\bpost\b/i.test(method)) {
+        const claudeMatch = url.match(CLAUDE_COMPLETION);
+        if (claudeMatch) {
+          // Direct sein: "stream volledig uitgelezen" bleek niet waarneembaar
+          // (de annuleert de stream na het laatste event, clone().arrayBuffer()
+          // resolveert dan nooit of rejecteert stil). De provider-kant lost het
+          // antwoord-timing probleem op met herhalende levering + listener-dedup.
+          signal('claude', claudeMatch[1]);
+          return res;
+        }
+        if (CHATGPT_CONVERSATION.test(url)) {
+          signal('chatgpt');
+          return res;
+        }
       }
 
-      if (CHATGPT_CONVERSATION.test(url)) {
-        signal('chatgpt');
-        return res;
-      }
-      // Onbekende conversation-POST: log één keer per unieke URL. Puur
-      // diagnostisch — als OpenAI de route opnieuw verplaatst, staat hier de
-      // nieuwe URL in de console.
-      if (/\/backend-api\/[^?]*conversation/i.test(url) && !CHATGPT_SEEN.has(url)) {
-        CHATGPT_SEEN.add(url);
-        console.info('[Chronicle] chatgpt POST niet gematcht (nieuwe route?):', method, url);
+      // Diagnose: elke conversation-request (welke methode dan ook) één keer
+      // loggen. Zo is een volgende route-wijziging — send óf read — direct
+      // zichtbaar in de console in plaats van een stille breuk.
+      if (
+        /\/backend-api\/[^?]*conversation/i.test(url) &&
+        !/\/(bazaar|ads)\b/i.test(url) &&
+        !CHATGPT_SEEN.has(method + ' ' + url)
+      ) {
+        CHATGPT_SEEN.add(method + ' ' + url);
+        console.info('[Chronicle] chatgpt request gezien:', method, url);
       }
     } catch {
       // interceptie mag de pagina nooit breken

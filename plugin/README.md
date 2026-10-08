@@ -88,8 +88,10 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
   geïnjecteerd; `normalize.js` laadt vóór de providers en hangt zijn helpers
   op `window.__chronicleUI`.)*
 - `content/chatgpt.js` — haalt het gesprek via `/backend-api/conversation/{id}`
-  (mapping-tree → geordende turns, zelfde regels als `utils/sourceParsers.ts`),
-  DOM-fallback erachter.
+  (met `/backend-api/conversations/{id}` als de enkelvoud-route 404 geeft) **met
+  een `Authorization: Bearer`-token uit `/api/auth/session`** — cookies alleen
+  geven 401. Mapping-tree → geordende turns, zelfde regels als
+  `utils/sourceParsers.ts`; DOM-fallback erachter.
 - `content/normalize.js` — gedeelde knop + statusfeedback + de
   ParsedConversation-whitelist.
 - `options/` — listener-URL + token (`chrome.storage.local`).

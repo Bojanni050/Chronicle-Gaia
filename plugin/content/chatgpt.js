@@ -17,18 +17,51 @@
     return match ? match[1] : null;
   }
 
+  /**
+   * De ChatGPT-API gate't /backend-api op een Bearer-token uit /api/auth/session;
+   * cookies alleen geven 401. Zonder token vallen we terug op cookie-auth.
+   */
+  async function authHeaders() {
+    try {
+      const res = await fetch('/api/auth/session', {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!res.ok) return {};
+      const session = await res.json();
+      const token = session && session.accessToken;
+      if (!token) return {};
+      return {
+        Authorization: `Bearer ${token}`,
+        'X-Authorization': `Bearer ${token}`,
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  /** De detailrespons kan direct de mapping zijn of onder `conversation` zitten. */
+  function mappingRoot(body) {
+    if (!body || typeof body !== 'object') return null;
+    if (body.mapping) return body;
+    if (body.conversation && body.conversation.mapping) return body.conversation;
+    return null;
+  }
+
   async function fetchConversation(id) {
-    // De detail-route is in de loop der tijd verschoven; probeer de bekende
-    // vormen na elkaar en neem de eerste die een mapping-tree teruggeeft.
+    // De detail-route is in de loop der tijd verschoven (enkelvoud → meervoud);
+    // probeer de bekende vormen na elkaar en neem de eerste met een mapping-tree.
     const paths = [
       `/backend-api/conversation/${id}`,
       `/backend-api/conversations/${id}`,
     ];
+    const auth = await authHeaders();
     let lastError = null;
     for (const path of paths) {
       try {
         const res = await fetch(path, {
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', ...auth },
           credentials: 'same-origin',
           cache: 'no-store',
         });
@@ -36,8 +69,8 @@
           lastError = new Error(`chatgpt API ${res.status} (${path})`);
           continue;
         }
-        const body = await res.json();
-        if (body && body.mapping) return body;
+        const root = mappingRoot(await res.json());
+        if (root) return root;
         lastError = new Error(`chatgpt API onverwachte vorm (${path})`);
       } catch (err) {
         lastError = err;
