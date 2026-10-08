@@ -173,7 +173,7 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
   }
 
   const now = Date.now();
-  const existingRows = await pool.query('SELECT id, content, "contentHash", "createdAt", capture FROM chats');
+  const existingRows = await pool.query('SELECT id, content, "contentHash", createdat, capture FROM chats');
   const normalized = normalizeIngestChat(raw, crypto.randomUUID(), now);
 
   const existing = findExistingRow(
