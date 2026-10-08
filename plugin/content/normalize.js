@@ -64,6 +64,7 @@
       setTimeout(() => setButtonState(button, 'idle'), 4000);
       return;
     }
+    console.info('[Chronicle] leveringsresultaat:', JSON.stringify(response));
     if (!response || !response.ok) {
       if (response && response.queued) {
         setButtonState(button, 'queued', response.error || '');
