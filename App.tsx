@@ -148,16 +148,15 @@ const App: React.FC = () => {
     if (!window.electronAPI?.onChatIngested) return;
     const unsubscribe = window.electronAPI.onChatIngested(async () => {
       const chats = await window.electronAPI!.loadDatabase() || [];
-      setState(prev => {
-        // Is het aangevulde gesprek op dit moment open? Dan moet de viewer
-        // meebewegen met de nieuwe versie, anders blijft het oude exemplaar
-        // op het scherm staan terwijl de lijst al vernieuwd is.
-        const viewingChat =
-          prev.viewingChat && chats.some((c: ChatEntry) => c.id === prev.viewingChat!.id)
-            ? chats.find((c: ChatEntry) => c.id === prev.viewingChat!.id) || null
-            : prev.viewingChat;
-        return { ...prev, chats, viewingChat };
-      });
+      setState(prev => ({
+        ...prev,
+        chats,
+        // Het open gesprek wijst na elke ingest naar de verse rij; wordt die
+        // niet gevonden, dan blijft de huidige staan.
+        viewingChat: prev.viewingChat
+          ? chats.find(c => c.id === prev.viewingChat!.id) ?? prev.viewingChat
+          : null,
+      }));
     });
     return unsubscribe;
   }, []);
