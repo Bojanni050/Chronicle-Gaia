@@ -4,7 +4,8 @@
  * met een DOM-fallback voor het geval de API-vorm wijzigt. Normaliseert naar
  * de ParsedConversation-vorm en levert af via de service worker.
  */
-import { makeButton, exportToChronicle, buildConversation } from './normalize.js';
+// chrome.runtime is beschikbaar; de gedeelde helper komt uit normalize.js (gewoon script, geen ES-module)
+const { makeButton, exportToChronicle, buildConversation } = window.__chronicleUI;
 
 function conversationUuidFromUrl() {
   const match = location.pathname.match(/\/chat\/([0-9a-f-]{36})/i);
@@ -102,13 +103,19 @@ async function collectConversation() {
   });
 }
 
-makeButton(async (event) => {
-  const button = event.currentTarget;
+const floatingButton = makeButton(async (event) => {
+  await runExport(event.currentTarget);
+});
+
+async function runExport(button) {
   const conv = await collectConversation();
   if (conv.error) {
     button.textContent = '✗ ' + conv.error;
-    setTimeout(() => (button.textContent = '→ Chronicle'), 4000);
+    setTimeout(() => window.__chronicleUI.setButtonState(button, 'idle'), 4000);
     return;
   }
   await exportToChronicle(button, conv);
-});
+}
+
+// De toolbar-knop van de extensie triggert dezelfde export.
+window.__chronicleUI.bindToolbarClick(() => runExport(floatingButton));

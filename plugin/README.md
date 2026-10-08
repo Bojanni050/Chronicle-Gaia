@@ -47,12 +47,17 @@ plugin (content script)  →  service worker (token + retry-queue)
   en wordt niet eindeloos herhaald).
 - `content/claude.js` — haalt het gesprek via de interne API van claude.ai
   (`/api/organizations/{org}/chat_conversations/{uuid}`), DOM-fallback erachter.
+  *(Let op: géén ES-modules — MV3 content scripts worden als gewone scripts
+  geïnjecteerd; `normalize.js` laadt vóór de providers en hangt zijn helpers
+  op `window.__chronicleUI`.)*
 - `content/chatgpt.js` — haalt het gesprek via `/backend-api/conversation/{id}`
   (mapping-tree → geordende turns, zelfde regels als `utils/sourceParsers.ts`),
   DOM-fallback erachter.
 - `content/normalize.js` — gedeelde knop + statusfeedback + de
   ParsedConversation-whitelist.
 - `options/` — listener-URL + token (`chrome.storage.local`).
+- **Toolbar-knop** — het extensie-icoon in de werkbalk triggert dezelfde export
+  op het actieve tab (handig als de zwevende knop door site-CSS wordt bedekt).
 
 ## Contract
 

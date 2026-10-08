@@ -151,3 +151,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Bij het starten van de worker: wachtrij doorspoelen (alleen transport-fouten).
 chrome.runtime.onStartup.addListener(() => { flushQueue(null); });
 chrome.runtime.onInstalled.addListener(() => { flushQueue(null); });
+
+// De toolbar-knop: alleen de provider-scripts kunnen het gesprek ophalen
+// (same-origin cookies), dus de actie vraagt het actieve tab het gesprek te
+// exporteren. Werkt ook als de zwevende knop door de site-CSS wordt bedekt.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab || !tab.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'chronicle-click' });
+  } catch {
+    // Geen content script op dit tab (bijv. geen claude.ai/chatgpt.com) —
+    //Chrome kan hier geen alert tonen vanuit de worker; stil negeren.
+  }
+});
