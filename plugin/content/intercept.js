@@ -30,6 +30,7 @@
 
       const claudeMatch = url.match(/\/chat_conversations\/([0-9a-f-]{36})\/completion/);
       if (claudeMatch && /post/i.test(method)) {
+        console.info('[Chronicle] intercept (fetch):', url.slice(0, 80));
         // Background: resolveert als de stream klaar is. De caller krijgt res
         // direct terug — de app moet zelf kunnen streamen lezen.
         res
@@ -56,6 +57,36 @@
       // interceptie mag de pagina nooit breken
     }
     return res;
+  };
+  // Legacy-modus van claude.ai kan de completion ook via XHR draaien in
+  // plaats van fetch; dezelfde signaalregel op de XHR-kant.
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__chronicleUrl = String(url || '');
+    this.__chronicleMethod = String(method || 'GET');
+    return origOpen.call(this, method, url, ...rest);
+  };
+  XMLHttpRequest.prototype.send = function (...args) {
+    const url = this.__chronicleUrl || '';
+    const method = this.__chronicleMethod || '';
+    const claudeMatch = url.match(/\/chat_conversations\/([0-9a-f-]{36})\/completion/);
+    const chatgptMatch = /post/i.test(method) && /\/backend-api\/conversation(\/|$|\?)/.test(url);
+    if ((claudeMatch && /post/i.test(method)) || chatgptMatch) {
+      this.addEventListener('loadend', () => {
+        console.info('[Chronicle] intercept (XHR):', url.slice(0, 80));
+        window.postMessage(
+          {
+            source: 'chronicle-intercept',
+            type: 'conversation-updated',
+            provider: chatgptMatch ? 'chatgpt' : 'claude',
+            ...(claudeMatch && !chatgptMatch ? { uuid: claudeMatch[1] } : {}),
+          },
+          location.origin
+        );
+      });
+    }
+    return origSend.apply(this, args);
   };
   console.info('[Chronicle] auto-capture interceptor actief op', location.host);
 })();

@@ -364,10 +364,15 @@
     if (data.provider !== 'claude') return;
     // Debounce: een antwoord arriveert in veel kleine afgeronde reads; pas
     // als de signalen 1,5s stil zijn, is het gesprek stabiel genoeg.
+    console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
     clearTimeout(autoCaptureTimer);
     autoCaptureTimer = setTimeout(async () => {
       const conv = await collectConversation();
-      if (conv.error) return; // niets zichtbaar; volgende signaal probeert opnieuw
+      if (conv.error) {
+        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+        return;
+      }
+      console.info('[Chronicle] auto-capture: levering gestart'); // niets zichtbaar; volgende signaal probeert opnieuw
       await exportToChronicle(floatingButton, conv);
     }, 1500);
   });

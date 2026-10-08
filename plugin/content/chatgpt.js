@@ -237,10 +237,15 @@
     const data = event.data;
     if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
     if (data.provider !== 'chatgpt') return;
+    console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
     clearTimeout(autoCaptureTimer);
     autoCaptureTimer = setTimeout(async () => {
       const conv = await collectConversation();
-      if (conv.error) return;
+      if (conv.error) {
+        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+        return;
+      }
+      console.info('[Chronicle] auto-capture: levering gestart');
       await exportToChronicle(floatingButton, conv);
     }, 1500);
   });
