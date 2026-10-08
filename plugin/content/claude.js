@@ -95,20 +95,33 @@
 
   function turnsFromDom() {
     const turns = [];
-    // Primaire selectors (chat-pagina), plus de brede per-bericht-role-
-    //    attributen die claude.ai ook in cowork-sessies gebruikt.
+    // Vier lagen, breedst laatst: chat-pagina-testids → streamer/font-
+    //    klassen → data-testid*="message" → de generieke StreamBlock-markup
+    //    die claude.ai in cowork-sessies voor alle berichten gebruikt.
     let blocks = document.querySelectorAll('[data-testid="user-message"], [data-testid="assistant-message"]');
     if (!blocks.length) {
       blocks = document.querySelectorAll('[data-test-streamer="true"], .font-claude-message, .font-user-message');
     }
+    if (!blocks.length) {
+      blocks = document.querySelectorAll('[data-testid*="message"], [data-test-id*="message"]');
+    }
+    if (!blocks.length) {
+      blocks = document.querySelectorAll('[data-stream="input"], [data-stream="output"], .stream-block, [class*="stream-block"]');
+    }
     for (const block of blocks) {
-      const testid = block.getAttribute('data-testid');
+      const testid = block.getAttribute('data-testid') || block.getAttribute('data-test-id') || '';
       const streamer = block.getAttribute('data-test-streamer');
-      const isUser = testid === 'user-message' || streamer === 'false';
+      const stream = block.getAttribute('data-stream');
+      const isUser =
+        testid === 'user-message' ||
+        streamer === 'false' ||
+        stream === 'input' ||
+        /user|human/i.test(testid);
       const text = (block.innerText || '').trim();
       if (!text) continue;
       turns.push({ role: isUser ? 'user' : 'assistant', text });
     }
+    console.info('[Chronicle] DOM-fallback:', turns.length, 'berichten gevonden');
     return turns;
   }
 
