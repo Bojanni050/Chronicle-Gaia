@@ -173,15 +173,32 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
   }
 
   const now = Date.now();
-  const existingRows = await pool.query('SELECT id, content, "contentHash", createdat, capture FROM chats');
   const normalized = normalizeIngestChat(raw, crypto.randomUUID(), now);
-
-  const existing = findExistingRow(
-    existingRows.rows.map((r) => ({ id: r.id, content: r.content, contentHash: r.contentHash, capture: r.capture })),
-    normalized.urlKey,
-    normalized.item.contentHash
-  );
-
+  // Dedup via geïndexeerde queries: eerst de exacte URL-key, dan de
+  // content-hash als fallback. Haalt alleen de kandidaat-rij op, niet de
+  // hele tabel — bij 500+ chats was de volledige scan per levering de
+  // bottleneck die de auto-capture deed vastlopen.
+  let existing = null;
+  if (normalized.urlKey) {
+    const byUrl = await pool.query(
+      "SELECT id, content, \"contentHash\", createdat, capture FROM chats WHERE capture->>'url' = $1 LIMIT 1",
+      [normalized.urlKey]
+    );
+    if (byUrl.rows.length) {
+      const r = byUrl.rows[0];
+      existing = { id: r.id, content: r.content, contentHash: r.contentHash, capture: r.capture, createdAt: r.createdat };
+    }
+  }
+  if (!existing) {
+    const byHash = await pool.query(
+      'SELECT id, content, "contentHash", createdat, capture FROM chats WHERE "contentHash" = $1 LIMIT 1',
+      [normalized.item.contentHash]
+    );
+    if (byHash.rows.length) {
+      const r = byHash.rows[0];
+      existing = { id: r.id, content: r.content, contentHash: r.contentHash, capture: r.capture, createdAt: r.createdat };
+    }
+  }
   if (existing) {
     const sameContent =
       (existing.contentHash || foundationContentHash(existing.content)) ===
@@ -311,6 +328,10 @@ function startIngestListener({ pool, getMainWindow, resolveFoundationConfig }) {
       return sendJson(res, 500, { error: 'internal listener error' });
     }
   });
+
+  // Dedup-indexen: zonder deze is de URL/hash-lookup een volledige scan.
+  pool.query('CREATE INDEX IF NOT EXISTS idx_chats_content_hash ON chats("contentHash")').catch(() => {});
+  pool.query("CREATE INDEX IF NOT EXISTS idx_chats_capture_url ON chats((capture->>'url'))").catch(() => {});
 
   // Loopback only — this door is for the plugin on this machine.
   server.listen(port, '127.0.0.1', () => {
