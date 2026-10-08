@@ -26,8 +26,43 @@
     return match ? match[1] : null;
   }
 
+  /**
+   * De org-id staat niet in elke installatie onder dezelfde localStorage-
+   * sleutel. Resolutie in volgorde: bekende sleutels → elke sleutel met een
+   * uuid die op "org" lijkt → de /api/organizations-lijst (waar de webclient
+   * zelf ook uit leest).
+   */
+  async function resolveOrgId() {
+    const knownKeys = ['lastActiveOrg', 'lastActiveOrgId', 'activeOrg'];
+    for (const key of knownKeys) {
+      const value = localStorage.getItem(key);
+      if (value && /^[0-9a-f-]{36}$/i.test(value.trim())) return value.trim();
+    }
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !/org/i.test(key)) continue;
+      const value = localStorage.getItem(key);
+      const match = (value || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      if (match) return match[0];
+    }
+    try {
+      const res = await fetch('/api/organizations', {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const body = await res.json();
+      const org = body?.org?.uuid || body?.[0]?.uuid || body?.uuid;
+      if (org) return org;
+    } catch {
+      // geen van de routes werkte: de DOM-fallback neemt het over
+    }
+    return null;
+  }
+
   async function fetchConversation(uuid) {
-    const org = localStorage.getItem('lastActiveOrg');
+    const org = await resolveOrgId();
+    if (!org) throw new Error('no org');
     const res = await fetch(`/api/organizations/${org}/chat_conversations/${uuid}?tree=True&rendering=tree`, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
@@ -57,14 +92,19 @@
 
   function turnsFromDom() {
     const turns = [];
-    const blocks = document.querySelectorAll('[data-testid="user-message"], [data-testid="assistant-message"]');
+    // Primaire selectors (chat-pagina), plus de brede per-bericht-role-
+    //    attributen die claude.ai ook in cowork-sessies gebruikt.
+    let blocks = document.querySelectorAll('[data-testid="user-message"], [data-testid="assistant-message"]');
+    if (!blocks.length) {
+      blocks = document.querySelectorAll('[data-test-streamer="true"], .font-claude-message, .font-user-message');
+    }
     for (const block of blocks) {
+      const testid = block.getAttribute('data-testid');
+      const streamer = block.getAttribute('data-test-streamer');
+      const isUser = testid === 'user-message' || streamer === 'false';
       const text = (block.innerText || '').trim();
       if (!text) continue;
-      turns.push({
-        role: block.getAttribute('data-testid') === 'user-message' ? 'user' : 'assistant',
-        text,
-      });
+      turns.push({ role: isUser ? 'user' : 'assistant', text });
     }
     return turns;
   }
