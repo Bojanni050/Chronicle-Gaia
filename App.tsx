@@ -328,6 +328,11 @@ const App: React.FC = () => {
   const handleUpload = (content: string, source: string, title: string, summary: string, tags: string[], fileName: string, embedding?: number[], assets?: string[], capture?: CaptureData, sourceFileRef?: SourceFileRef, attachmentRefs?: AttachmentRef[]) => {
     const now = Date.now();
     const contentHash = foundationContentHash(content);
+    // The conversation's own moment (carried by the export as capture.occurredAt)
+    // becomes the archive date, so an import shows on its real date instead of
+    // the day it was imported. Falls back to now when the source has no time.
+    const occurredMs = capture?.occurredAt ? Date.parse(capture.occurredAt) : NaN;
+    const occurredAt = Number.isFinite(occurredMs) ? occurredMs : now;
 
     // Dedup: is this conversation already in the archive? Exact URL first,
     // content hash as the fallback for URL-less sources (utils/chatDedup).
@@ -371,8 +376,8 @@ const App: React.FC = () => {
       id: Math.random().toString(36).substr(2, 9),
       type: ItemType.CHAT,
       title, content, summary, tags, source, 
-      createdAt: now, 
-      updatedAt: now,
+      createdAt: occurredAt, 
+      updatedAt: occurredAt,
       fileName, embedding, assets,
       capture,
       contentHash,

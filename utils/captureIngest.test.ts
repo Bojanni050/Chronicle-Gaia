@@ -72,6 +72,9 @@ describe('normalizeIngestChat', () => {
     expect(item.capture.url).toBe('https://claude.ai/chat/abc-123');
     expect(item.capture.occurredAt).toBe('2025-10-09T08:53:20.000Z');
     expect(item.capture.turns).toEqual(VALID.turns);
+    // The archive date is the conversation's own moment, not the ingest time.
+    expect(item.createdAt).toBe(1760000000000);
+    expect(item.updatedAt).toBe(1760000000000);
     expect(item.foundation).toEqual({ status: 'pending', at: 12345 });
     expect(typeof item.contentHash).toBe('string');
     expect(urlKey).toBe('https://claude.ai/chat/abc-123');
@@ -98,6 +101,12 @@ describe('normalizeIngestChat', () => {
   it('accepts epoch-seconds occurredAt', () => {
     const { item } = normalizeIngestChat({ content: 'x', occurredAt: 1760000000 }, 'id-3');
     expect(item.capture.occurredAt).toBe('2025-10-09T08:53:20.000Z');
+  });
+
+  it('falls back to the ingest time when the source carries no timestamp', () => {
+    const { item } = normalizeIngestChat({ content: 'x' }, 'id-5', 999);
+    expect(item.createdAt).toBe(999);
+    expect(item.updatedAt).toBe(999);
   });
 
   it('keeps unknown roles on the assistant side, like the existing importers', () => {

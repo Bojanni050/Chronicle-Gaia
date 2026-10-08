@@ -332,3 +332,29 @@
   - `package.json`: `fflate` dependency.
   - Validatie: 92 tests groen, `vite build` ok, `node --check` op
     `electron-main.js` + `claudeExportZip.cjs` ok.
+
+## 2026-10-08 (Importdatum = echte gespreksdatum i.p.v. vandaag)
+
+- Findings:
+  - Bo: "Alle chats krijgen de datum van vandaag." Dat was een **bewuste eerdere
+    keuze** (comment in `captureIngest.ts`): de archiefregel kreeg de ingest-tijd
+    als `createdAt`, zodat een geïmporteerde chat bovenaan stond i.p.v. op zijn
+    oorspronkelijke datum. De UI (ChatCard, ChatViewer, sortering, zoekfilters,
+    analytics) leest overal `chat.createdAt`, dus daar kwam "vandaag" vandaan.
+  - Het echte gespreksmoment zat wél al in `capture.occurredAt` (naar Foundation),
+    maar niet op de entry.
+- Conclusions:
+  - Besluit (Bo): omdraaien — de echte gespreksdatum is de archiefsdatum. Eén
+    regel voor álle importpaden: gebruik `capture.occurredAt` als die er is, val
+    anders terug op de ingest-tijd (bron zonder tijd, bijv. losse notitie).
+  - Bewust gevolg: geïmporteerde chats staan nu chronologisch op hun eigen datum,
+    niet meer automatisch bovenaan.
+- Actions:
+  - `App.tsx` `handleUpload` (dekt zowel UploadModal als de native bulk-import):
+    `createdAt`/`updatedAt` van een nieuwe chat = `Date.parse(capture.occurredAt)`
+    met `now` als fallback.
+  - `utils/captureIngest.ts` (plugin-ingest): `archiveMs = occurredMs ?? now`;
+    `item.createdAt`/`updatedAt` = `archiveMs`; oude comment vervangen.
+  - `utils/captureIngest.test.ts`: +1 test (archiefdatum = occurredAt) en +1
+    (fallback naar ingest-tijd zonder tijd).
+  - Validatie: 93 tests groen, `vite build` ok, `node --check` ok.

@@ -172,11 +172,11 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   if (occurredMs !== undefined) capture.occurredAt = new Date(occurredMs).toISOString();
   if (url) capture.url = url;
 
-  // Het originele gespreksmoment blijft behouden als capture.occurredAt (de
-  // tijd die naar Foundation gaat), maar de archiefregel zelf krijgt de
-  // ingest-tijd als createdAt — net als de renderer-import (handleUpload):
-  // een geïmporteerde chat staat bovenaan het archief, niet op zijn
-  // oorspronkelijke datum van maanden geleden.
+  // De archiefregel krijgt het originele gespreksmoment als createdAt, niet de
+  // ingest-tijd: sorteren (App.filteredChats) en de datum op de kaart/zoekfilters
+  // werken op createdAt, dus een geïmporteerde chat hoort op zijn echte datum te
+  // staan. Valt terug op de ingest-tijd als de bron geen tijd meegaf.
+  const archiveMs = occurredMs ?? now;
   const foundationPayload = buildChatIngestPayload({
     content,
     title,
@@ -195,8 +195,8 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
       summary: '',
       tags: [],
       source: toSourceType(sourceProvider),
-      createdAt: now,
-      updatedAt: now,
+      createdAt: archiveMs,
+      updatedAt: archiveMs,
       capture,
       foundation: { status: 'pending', at: now },
       contentHash: foundationContentHash(content),
