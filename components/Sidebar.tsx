@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ChatEntry, ItemType, SourceType } from '../types';
 import { SearchIcon, XIcon, MessageIcon, ActivityIcon, PencilIcon, FilterIcon, CalendarIcon, TagIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, TerminalIcon } from './Icons';
 import { ChatCard } from './ChatCard';
@@ -48,6 +48,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onShowArchivedChange
 }) => {
   const [showQuickFilters, setShowQuickFilters] = useState(false);
+  const MIN_WIDTH = 240;
+  const DEFAULT_WIDTH = 560;
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const asideRef = useRef<HTMLElement>(null);
+  const isResizing = useRef(false);
+
+  const clampWidth = useCallback((px: number) => {
+    const max = window.innerWidth * 0.5;
+    return Math.min(Math.max(px, MIN_WIDTH), max);
+  }, []);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const left = asideRef.current?.getBoundingClientRect().left ?? 0;
+      setWidth(clampWidth(e.clientX - left));
+    };
+    const onUp = () => {
+      if (!isResizing.current) return;
+      isResizing.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [clampWidth]);
+
+  useEffect(() => {
+    const onResize = () => setWidth(w => clampWidth(w));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [clampWidth]);
 
   const getSourceIcon = (source: string) => {
     const s = source.toLowerCase();
@@ -125,7 +168,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-[280px] border-r border-sandstone dark:border-stone-800 bg-[#F2F1EC] dark:bg-stone-900/50 flex flex-col shrink-0 font-sans relative transition-all">
+    <aside
+      ref={asideRef}
+      style={{ width: `${width}px` }}
+      className="max-w-[50vw] border-r border-sandstone dark:border-stone-800 bg-[#F2F1EC] dark:bg-stone-900/50 flex flex-col shrink-0 font-sans relative transition-colors"
+    >
+
+      {/* Resize handle */}
+      <div
+        onMouseDown={startResize}
+        title="Drag to resize"
+        className="absolute top-0 right-0 h-full w-1.5 -mr-0.5 cursor-col-resize z-20 group"
+      >
+        <div className="h-full w-full transition-colors group-hover:bg-sage-green/40" />
+      </div>
       
       {/* Top Search & Filter Header */}
       <div className="p-4 space-y-4 border-b border-sandstone/40 bg-white dark:bg-stone-900 z-10 shadow-sm">

@@ -415,3 +415,19 @@
   - Vervolg (zelfde dag, Bo): die melding stond ín de scrollbare tab-inhoud,
     dus je moest scrollen om het succes te zien. Melding verplaatst naar een balk
     tússen de scroll-inhoud en de footer (altijd zichtbaar), met ✓/!/×-icoon.
+
+## 2026-10-08 (Resizable eerste kolom)
+
+- Findings: De eerste kolom (Sidebar, archieflijst) stond vast op `w-[280px]` en
+  kon niet breder, waardoor lange titels/tags afgekapt werden.
+- Conclusions: Vaste breedte vervangen door state + sleepgreep aan de
+  rechterrand. Standaard twee keer zo breed (560px), ondergrens 240px, harde
+  bovengrens 50% van het venster. Waarde bewust lokaal in `Sidebar` gehouden
+  (geen App-state) omdat dit puur een layout-detail is; `max-w-[50vw]` is een
+  tweede vangnet naast de clamp in de drag-handler. `transition-all` vervangen
+  door `transition-colors`, anders loopt de breedte tijdens het slepen achter.
+- Actions:
+  - `components/Sidebar.tsx`: `width`-state (default 560), `clampWidth`,
+    `startResize` + window `mousemove`/`mouseup`-listeners, clamp bij
+    venster-resize; sleepgreep (`cursor-col-resize`, hover-highlight) in `aside`.
+  - Validatie: `vite build` ok.
