@@ -357,7 +357,6 @@
   // wordt het (debounced) opgehaald via de bewuste API-route en afgeleverd.
   // Herlevering is veilig: de listener dedupt, dus een signaal te veel is
   // hooguit een duplicate, nooit een dubbele rij.
-  let autoCaptureTimer = null;
   window.addEventListener('message', (event) => {
     // Geen event.source-check: in de isolated world is event.source het
     // MAIN-world window — een ander object dan de content-script-window,
@@ -370,16 +369,23 @@
     // Debounce: een antwoord arriveert in veel kleine afgeronde reads; pas
     // als de signalen 1,5s stil zijn, is het gesprek stabiel genoeg.
     console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
-    clearTimeout(autoCaptureTimer);
-    autoCaptureTimer = setTimeout(async () => {
-      const conv = await collectConversation(data.uuid);
-      if (conv.error) {
-        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
-        return;
-      }
-      console.info('[Chronicle] auto-capture: levering gestart'); // niets zichtbaar; volgende signaal probeert opnieuw
-      await exportToChronicle(floatingButton, conv);
-    }, 1500);
+    // Het signaal valt bij de response-headers: het antwoord streamt op dat
+    // moment nog. Herhaalde levering met oplopende tussenpozen lost dat op —
+    // de listener dedupt, dus tussentijdse (half-gegroeide) versies zijn
+    // hooguit een update die de volgende levering weer overtreft; de laatste
+    // poging heeft gegarandeerd het complete antwoord.
+    const ATTEMPTS = [2000, 4000, 6000]; // na 2s, 6s, 12s
+    ATTEMPTS.forEach((delay, i) => {
+      setTimeout(async () => {
+        const conv = await collectConversation(data.uuid);
+        if (conv.error) {
+          if (i === ATTEMPTS.length - 1) console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+          return;
+        }
+        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length);
+        await exportToChronicle(floatingButton, conv);
+      }, delay);
+    });
   });
 
   // De toolbar-knop van de extensie triggert dezelfde export.

@@ -223,7 +223,6 @@
   // Zelfde patroon als de Claude-provider: het interceptorscript seint, hier
   // wordt (debounced) het huidige gesprek via de bewezen route opgehaald en
   // afgeleverd. Herlevering is veilig (listener-dedup).
-  let autoCaptureTimer = null;
   window.addEventListener('message', (event) => {
     // Geen event.source-check: in de isolated world is event.source het
     // MAIN-world window — een ander object dan de content-script-window,
@@ -234,16 +233,21 @@
     if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
     if (data.provider !== 'chatgpt') return;
     console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
-    clearTimeout(autoCaptureTimer);
-    autoCaptureTimer = setTimeout(async () => {
-      const conv = await collectConversation();
-      if (conv.error) {
-        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
-        return;
-      }
-      console.info('[Chronicle] auto-capture: levering gestart');
-      await exportToChronicle(floatingButton, conv);
-    }, 1500);
+    // Zelfde herhalende levering als de Claude-provider: het signaal valt bij
+    // de headers, het antwoord streamt nog. Dedup aan de listener-kant maakt
+    // tussenliggende leveringen onschadelijk; de laatste heeft alles.
+    const ATTEMPTS = [2000, 4000, 6000];
+    ATTEMPTS.forEach((delay, i) => {
+      setTimeout(async () => {
+        const conv = await collectConversation();
+        if (conv.error) {
+          if (i === ATTEMPTS.length - 1) console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+          return;
+        }
+        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length);
+        await exportToChronicle(floatingButton, conv);
+      }, delay);
+    });
   });
 
   // De toolbar-knop van de extensie triggert dezelfde export.

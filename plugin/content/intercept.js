@@ -63,20 +63,16 @@
 
       const claudeMatch = url.match(CLAUDE_COMPLETION);
       if (claudeMatch) {
-        res
-          .clone()
-          .arrayBuffer()
-          .then(() => signal('claude', claudeMatch[1]))
-          .catch(() => {});
+        // Direct sein: "stream volledig uitgelezen" bleek niet waarneembaar
+        // (de annuleert de stream na het laatste event, clone().arrayBuffer()
+        // resolveert dan nooit of rejecteert stil). De provider-kant lost het
+        // antwoord-timing probleem op met herhalende levering + listener-dedup.
+        signal('claude', claudeMatch[1]);
         return res;
       }
 
       if (CHATGPT_CONVERSATION.test(url)) {
-        res
-          .clone()
-          .arrayBuffer()
-          .then(() => signal('chatgpt'))
-          .catch(() => {});
+        signal('chatgpt');
         return res;
       }
     } catch {
