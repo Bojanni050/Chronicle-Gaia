@@ -286,28 +286,82 @@
     await exportToChronicle(button, conv);
   }
 
-  // ── Automatische capture (fase 3) ────────────────────────────────────────
-  // Het interceptorscript seint na een StreamGenerate-POST; hier wordt
-  // (herhaald, want het antwoord streamt nog) de DOM gescrapet en geleverd.
-  // Herlevering is veilig: de listener dedupt op url/contentHash.
+  // ── Automatische capture ─────────────────────────────────────────────────
+  // Gemini's netwerkroute is ondoorzichtig en verandert; daarom is de DOM de
+  // bron van waarheid. Een MutationObserver + settle-debounce levert het
+  // gesprek zodra een antwoord klaar is met streamen. Bij het openen van een
+  // bestaand gesprek exporteren we níet: pas groei t.o.v. de baseline (na
+  // render-stilte) telt. Herlevering blijft veilig (listener dedupt op
+  // url/contentHash), dus een te vroege levering is hooguit een update.
+  let armed = false;
+  let baseline = '';
+  let settleTimer = null;
+
+  function signature() {
+    const turns = turnsFromDom();
+    return turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
+  }
+
+  function scheduleCapture() {
+    if (!armed) return;
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      const sig = signature();
+      if (!sig || sig === baseline) return;
+      baseline = sig;
+      const conv = collectConversation();
+      if (conv.error) {
+        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+        return;
+      }
+      console.info('[Chronicle] auto-capture: levering —', (conv.turns || []).length, 'berichten');
+      exportToChronicle(floatingButton, conv);
+    }, 1800);
+  }
+
+  /** Neem de huidige stand als baseline nadat de pagina gerenderd is. */
+  function armAfterSettle() {
+    armed = false;
+    baseline = '';
+    setTimeout(() => {
+      baseline = signature();
+      armed = true;
+    }, 4000);
+  }
+
+  new MutationObserver(scheduleCapture).observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+
+  // Bij een SPA-navigatie naar een ander gesprek eerst laten renderen, dan pas
+  // als baseline nemen — anders exporteer je het net geopende oude gesprek.
+  let lastUrl = location.href;
+  setInterval(() => {
+    if (location.href === lastUrl) return;
+    lastUrl = location.href;
+    armAfterSettle();
+  }, 1000);
+  armAfterSettle();
+
+  // Diagnose: laat eenmalig zien of de DOM-selectors nog werken. Breekt een
+  // Google-update de markup, dan zie je hier 0 containers i.p.v. een stille
+  // breuk (de juiste strings staan bovenin SELECTORS).
+  setTimeout(() => {
+    const containers = document.querySelectorAll(SELECTORS.turnContainer).length;
+    const turns = turnsFromDom().length;
+    console.info('[Chronicle] gemini DOM-diagnose:', containers, 'containers,', turns, 'berichten');
+  }, 5000);
+
+  // Het interceptorsignaal blijft als bonus-trigger: het vuurt directer dan de
+  // observer (al is de observer de betrouwbare basis).
   window.addEventListener('message', (event) => {
     if (event.origin !== location.origin) return;
     const data = event.data;
     if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
     if (data.provider !== 'gemini') return;
-    console.info('[Chronicle] auto-capture signaal', JSON.stringify(data));
-    const ATTEMPTS = [3000, 6000, 9000];
-    ATTEMPTS.forEach((delay, i) => {
-      setTimeout(async () => {
-        const conv = collectConversation();
-        if (conv.error) {
-          if (i === ATTEMPTS.length - 1) console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
-          return;
-        }
-        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length, '—', (conv.turns || []).length, 'berichten');
-        await exportToChronicle(floatingButton, conv);
-      }, delay);
-    });
+    scheduleCapture();
   });
 
   window.__chronicleUI.bindToolbarClick(() => {

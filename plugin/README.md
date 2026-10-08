@@ -38,7 +38,10 @@ wikkelt `window.fetch` in. Het antwoordt géén inhoud — het seint alleen
 - claude.ai: na een volledig uitgelezen `POST …/chat_conversations/{uuid}/completion`
 - chatgpt.com: na een `POST /backend-api/conversation` of
   `POST /backend-api/f/conversation` (OpenAI verplaatste deze route)
-- gemini.google.com: na een `POST …/BardChatUi/data/…StreamGenerate`
+- gemini.google.com: een DOM-`MutationObserver` die het gesprek levert zodra
+  een antwoord klaar is met streamen (groeit t.o.v. de baseline; het openen van
+  een oud gesprek levert niets op). De `StreamGenerate`-POST is een bonus-trigger
+  maar niet de basis — Gemini's netwerkroute is ondoorzichtig en verandert.
 
 Het provider-script (isolated world) hoort het signaal via
 `window.postMessage`, wacht 1,5s (debounce — een antwoord arriveert in

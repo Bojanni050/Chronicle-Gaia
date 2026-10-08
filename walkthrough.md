@@ -537,3 +537,26 @@
   - Validatie: `node --check` op alle plugin-JS + manifest-JSON ok; `vite build` ok.
   - Open: Bo moet de extensie herladen en op gemini.google.com testen; de
     selectors kunnen na een Google-update breken.
+
+## 2026-10-08 (Plugin: Gemini auto-capture via DOM-observer)
+
+- Findings: Gemini-provider laadde wel (interceptor + helper + provider actief)
+  maar er kwam géén `[Chronicle] intercept: gemini` — de StreamGenerate-route
+  vuurde niet (of er was geen bericht verzonden, of Google gebruikt een andere
+  batchexecute-route; onze `request gezien`-diagnose staat op debug en was dus
+  verborgen in de console).
+- Conclusions:
+  - Voor een DOM-only provider is de netwerkroute een zwak fundament. De DOM
+    wordt nu de bron van waarheid: een `MutationObserver` met settle-debounce
+    (1,8s) levert het gesprek zodra een antwoord klaar is met streamen.
+  - Geen export bij het openen van een bestaand gesprek: pas groei t.o.v. de
+    baseline na render-stilte telt. Baseline reset bij SPA-navigatie naar een
+    ander /app/{id}. Herlevering blijft veilig (listener-dedup).
+  - Het interceptorsignaal blijft als bonus-trigger, maar is niet meer de basis.
+- Actions:
+  - `plugin/content/gemini.js`: `MutationObserver` + `signature()`/
+    `scheduleCapture()`/`armAfterSettle()`; URL-reset; eenmalige DOM-diagnose
+    (`gemini DOM-diagnose: N containers, M berichten`).
+  - `plugin/manifest.json` → 0.2.1; `plugin/README.md` bijgewerkt.
+  - Validatie: `node --check` ok.
+  - Open: herladen; de DOM-diagnose-regel vertelt of de selectors nog kloppen.
