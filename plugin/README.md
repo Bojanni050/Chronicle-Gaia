@@ -1,7 +1,8 @@
 # Chronicle Chat Exporter (browserplugin)
 
-Chrome-extensie (MV3) die het huidige gesprek op **claude.ai** en **chatgpt.com**
-met één klik aflevert bij Chronicle — niet rechtstreeks bij Foundation. Chronicle
+Chrome-extensie (MV3) die het huidige gesprek op **claude.ai**, **chatgpt.com**
+en **gemini.google.com** met één klik aflevert bij Chronicle — niet rechtstreeks
+bij Foundation. Chronicle
 is de deur: de listener schrijft de archiefkopie in de eigen `chats`-tabel en
 forwardt dezelfde raw velden automatisch naar Foundation's Ingestie Gateway
 (`POST /api/ingest/chat`, `source: "chronicle-capture"`).
@@ -37,6 +38,7 @@ wikkelt `window.fetch` in. Het antwoordt géén inhoud — het seint alleen
 - claude.ai: na een volledig uitgelezen `POST …/chat_conversations/{uuid}/completion`
 - chatgpt.com: na een `POST /backend-api/conversation` of
   `POST /backend-api/f/conversation` (OpenAI verplaatste deze route)
+- gemini.google.com: na een `POST …/BardChatUi/data/…StreamGenerate`
 
 Het provider-script (isolated world) hoort het signaal via
 `window.postMessage`, wacht 1,5s (debounce — een antwoord arriveert in
@@ -60,6 +62,9 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
 
 - Claude: `GET /api/organizations/{org}/chat_conversations` (cursor-paginering)
 - ChatGPT: `GET /backend-api/conversations` (offset-paginering)
+- Gemini: de (gevirtualiseerde) zijbalk uitvouwen en uitlezen; elk gesprek
+  wordt aangeklikt en de DOM gescrapet (Gemini laadt berichten alleen na een
+  klik, niet via directe `/app/{id}`-navigatie)
 - Voortgang staat op de knop: `⇊ 12/140 • nieuw 12 • bijgewerkt 0 • bekend 0`
 - Eén onbereikbaar gesprek breekt de run niet; mislukte leveringen worden
   apart geteld (en transport-fouten gaan in de retry-queue, zoals altijd)
@@ -76,8 +81,8 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
 
 ## Bouwvorm
 
-- `manifest.json` — MV3, host-permissies alleen `claude.ai`, `chatgpt.com`
-  en `127.0.0.1`.
+- `manifest.json` — MV3, host-permissies alleen `claude.ai`, `chatgpt.com`,
+  `gemini.google.com` en `127.0.0.1`.
 - `service-worker.js` — de enige plek met het token; client-side typeward
   (server-owned velden worden al in de plugin geweigerd, vóór verzending)
   en een retry-queue die alleen transport-fouten bewaart (4xx is definitief
@@ -92,6 +97,12 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
   een `Authorization: Bearer`-token uit `/api/auth/session`** — cookies alleen
   geven 401. Mapping-tree → geordende turns, zelfde regels als
   `utils/sourceParsers.ts`; DOM-fallback erachter.
+- `content/gemini.js` — géén JSON-API (de webclient praat via het
+  ondoorzichtige `batchexecute`/`StreamGenerate`-protocol en een directe
+  `/app/{id}`-load rendert alleen de shell): dit leest de DOM. Selectors uit
+  `davidmalko87/gemini-chat-exporter` (`.conversation-container`,
+  `user-query .query-text`, `model-response .markdown`). Bulk klikt de zijbalk-
+  anchors aan (met stabiliteitswacht tegen het "stale body"-probleem).
 - `content/normalize.js` — gedeelde knop + statusfeedback + de
   ParsedConversation-whitelist.
 - `options/` — listener-URL + token (`chrome.storage.local`).
@@ -115,6 +126,11 @@ als Foundation's `ingestPolicy.js`. De conversation-URL is first-class: zonder
   de turns compleet zijn.
 - De org-id van claude.ai wordt uit `localStorage.lastActiveOrg` gelezen; als
   een installatie een andere sleutel gebruikt, valt de knop terug op de DOM.
+- Gemini levert geen bruikbare API: alles gaat via DOM-selectors, die Google
+  met enige regelmaat wijzigt. Breekt het scrapen, dan staan de juiste strings
+  bovenaan `content/gemini.js` in `SELECTORS`. Bulk vereist een uitgevouwen
+  zijbalk. Titels/timestamps komen uit de zijbalk respectievelijk niet — Gemini
+  toont geen tijdstip in de DOM, dus `occurredAt` blijft leeg.
 - De automatische interceptie-variant (fase 3) is inmiddels wél gebouwd —
   zie "Automatische capture" hierboven. De knoppen blijven als fallback en
   voor geschiedenis van vóór de installatie.

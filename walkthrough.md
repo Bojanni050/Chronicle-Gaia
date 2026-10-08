@@ -506,3 +506,34 @@
 - Actions:
   - `plugin/content/intercept.js`: `chatgpt request gezien` → `console.debug`.
   - Validatie: `node --check` ok.
+
+## 2026-10-08 (Plugin: Gemini als derde provider)
+
+- Findings: Gemini toevoegen aan de plugin. Gemini heeft geen bruikbare
+  JSON-API: de webclient praat via het ondoorzichtige
+  `batchexecute`/`StreamGenerate`-protocol, en een directe `/app/{id}`-load
+  rendert alleen de app-shell (berichten laden alléén door op een zijbalk-
+  anchor te klikken). De DOM-selectors zijn dus de enige realistische route.
+- Conclusions:
+  - DOM-extractie met de bewezen selectors uit `davidmalko87/gemini-chat-
+    exporter` (mid-2026): `.conversation-container`, `user-query .query-text`,
+    `model-response .markdown`. Eerste-selector-die-tekst-heeft, plus
+    NBSP-normalisatie en het strippen van "You said"/"Gemini said".
+  - Auto-capture seint op de StreamGenerate-POST (fetch óf XHR) en scrapet
+    daarna herhaald (3/6/9s) de DOM — het antwoord streamt immers nog;
+    listener-dedup maakt herlevering veilig.
+  - Bulk kan niet via een lijst-API: de (gevirtualiseerde) zijbalk wordt
+    uitgelezen en elk gesprek wordt aangeklikt, met de stabiliteitswacht +
+    "eerste prompt verschilt"-guard tegen het stale-body-probleem dat de
+    userscript documenteert.
+  - `occurredAt` blijft leeg — Gemini toont geen tijdstip in de DOM.
+- Actions:
+  - nieuw `plugin/content/gemini.js` (knop, bulk, auto-capture, DOM-scrape).
+  - `plugin/content/intercept.js`: `GEMINI_STREAM`-regex + `signal('gemini')`
+    in de fetch- én XHR-tak; diagnose verbreed (`request gezien`, debug).
+  - `plugin/manifest.json` → 0.2.0: gemini-host-permissie, intercept-match en
+    een derde provider-entry.
+  - `plugin/README.md` bijgewerkt.
+  - Validatie: `node --check` op alle plugin-JS + manifest-JSON ok; `vite build` ok.
+  - Open: Bo moet de extensie herladen en op gemini.google.com testen; de
+    selectors kunnen na een Google-update breken.

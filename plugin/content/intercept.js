@@ -17,6 +17,7 @@
  *  - ChatGPT: POST /backend-api/conversation (oud) en /backend-api/f/conversation
  *    (huidige streaming-route) — niet de /prepare- en /updates-subroutes, die
  *    accepteren geen POST.
+ *  - Gemini: POST …/BardChatUi/data/…StreamGenerate (fetch óf XHR)
  */
 (() => {
   if (window.__chronicleInterceptInstalled) return;
@@ -44,9 +45,11 @@
   // Beide matchen; de subroutes /prepare en /updates accepteren géén POST
   // (405), dus die kunnen hier nooit een valse sein geven.
   const CHATGPT_CONVERSATION = /\/backend-api\/(?:f\/)?conversation(?:[/?]|$)/i;
-  // Diagnose: POST's naar /backend-api/...-conversation die we niet matchen
-  // één keer loggen, zodat een volgende endpoint-wijziging zichtbaar is.
-  const CHATGPT_SEEN = new Set();
+  // Gemini stuurt een antwoord via de StreamGenerate-RPC (fetch óf XHR).
+  const GEMINI_STREAM = /\/BardChatUi\/data\/[^?]*StreamGenerate/i;
+  // Diagnose: requests naar een conversation-route die we niet matchen — send
+  // óf read — één keer loggen, zodat een volgende routewijziging zichtbaar is.
+  const SEEN_REQUESTS = new Set();
 
   function signal(provider, uuid) {
     console.info('[Chronicle] intercept:', provider, uuid || '');
@@ -81,18 +84,24 @@
           signal('chatgpt');
           return res;
         }
+        if (GEMINI_STREAM.test(url)) {
+          signal('gemini');
+          return res;
+        }
       }
 
       // Diagnose: elke conversation-request (welke methode dan ook) één keer
       // loggen. Zo is een volgende route-wijziging — send óf read — direct
       // zichtbaar in de console in plaats van een stille breuk.
       if (
-        /\/backend-api\/[^?]*conversation/i.test(url) &&
-        !/\/(bazaar|ads)\b/i.test(url) &&
-        !CHATGPT_SEEN.has(method + ' ' + url)
+        (/\/backend-api\/[^?]*conversation/i.test(url) && !/\/(bazaar|ads)\b/i.test(url)) ||
+        /\/BardChatUi\/data\//i.test(url)
       ) {
-        CHATGPT_SEEN.add(method + ' ' + url);
-        console.debug('[Chronicle] chatgpt request gezien:', method, url);
+        const key = method + ' ' + url;
+        if (!SEEN_REQUESTS.has(key)) {
+          SEEN_REQUESTS.add(key);
+          console.debug('[Chronicle] request gezien:', method, url);
+        }
       }
     } catch {
       // interceptie mag de pagina nooit breken
@@ -115,9 +124,12 @@
     if (!/post/i.test(method)) return origSend.apply(this, args);
     const claudeMatch = url.match(CLAUDE_COMPLETION);
     const isChatgpt = CHATGPT_CONVERSATION.test(url);
-    if (claudeMatch || isChatgpt) {
+    const isGemini = GEMINI_STREAM.test(url);
+    if (claudeMatch || isChatgpt || isGemini) {
       this.addEventListener('loadend', () => {
-        signal(isChatgpt && !claudeMatch ? 'chatgpt' : 'claude', claudeMatch ? claudeMatch[1] : undefined);
+        if (claudeMatch) signal('claude', claudeMatch[1]);
+        else if (isChatgpt) signal('chatgpt');
+        else signal('gemini');
       });
     }
     return origSend.apply(this, args);
