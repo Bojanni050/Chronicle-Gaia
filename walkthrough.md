@@ -412,3 +412,6 @@
     melding (sagegroen/amber/terracotta) onder Data Management; prop geeft de
     samenvatting door.
   - Validatie: 95 tests groen, `vite build` ok, `node --check` op main + preload ok.
+  - Vervolg (zelfde dag, Bo): die melding stond ín de scrollbare tab-inhoud,
+    dus je moest scrollen om het succes te zien. Melding verplaatst naar een balk
+    tússen de scroll-inhoud en de footer (altijd zichtbaar), met ✓/!/×-icoon.

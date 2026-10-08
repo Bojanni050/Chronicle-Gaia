@@ -175,18 +175,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button onClick={onBackup} className="col-span-2 flex items-center justify-center gap-2 py-3 bg-sage-green text-white rounded-xl text-xs font-bold shadow-lg">Export Archive (Native/JSON)</button>
                   <button onClick={() => setShowClearConfirm(true)} className="col-span-2 flex items-center justify-center gap-2 py-3 text-terracotta text-xs font-bold hover:underline">Wipe All Data</button>
                 </div>
-                {importFeedback && (
-                  <div className={`mt-3 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs font-bold ${
-                    importFeedback.tone === 'ok'
-                      ? 'bg-sage-green/10 border-sage-green/40 text-earth-dark dark:text-slate-100'
-                      : importFeedback.tone === 'warn'
-                        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
-                        : 'bg-terracotta/10 border-terracotta/40 text-terracotta'
-                  }`}>
-                    <span className="not-italic leading-relaxed">{importFeedback.text}</span>
-                    <button onClick={() => setImportFeedback(null)} className="shrink-0 text-moss-brown hover:text-earth-dark dark:hover:text-white" aria-label="Dismiss"><XIcon /></button>
-                  </div>
-                )}
               </section>
             </>
           )}
@@ -227,6 +215,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             />
           )}
         </div>
+
+        {/* Always visible: sits outside the scrolling tab content, above the
+            footer, so a bulk-import result never needs a scroll to be seen. */}
+        {importFeedback && (
+          <div className={`flex items-center justify-between gap-3 px-6 py-3 border-t text-xs font-bold ${
+            importFeedback.tone === 'ok'
+              ? 'bg-sage-green/15 border-sage-green/40 text-earth-dark dark:text-slate-100'
+              : importFeedback.tone === 'warn'
+                ? 'bg-amber-50 dark:bg-amber-900/25 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                : 'bg-terracotta/10 border-terracotta/40 text-terracotta'
+          }`}>
+            <span className="flex items-center gap-2 not-italic leading-relaxed">
+              <span className="shrink-0 font-black">{importFeedback.tone === 'ok' ? '✓' : importFeedback.tone === 'warn' ? '!' : '×'}</span>
+              {importFeedback.text}
+            </span>
+            <button onClick={() => setImportFeedback(null)} className="shrink-0 text-moss-brown hover:text-earth-dark dark:hover:text-white" aria-label="Dismiss"><XIcon /></button>
+          </div>
+        )}
 
         <div className="p-6 bg-paper dark:bg-slate-900 border-t border-sandstone dark:border-slate-800 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2 text-sm font-semibold text-moss-brown hover:text-earth-dark">Cancel</button>
