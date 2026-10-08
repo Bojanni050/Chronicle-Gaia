@@ -358,7 +358,11 @@
   // hooguit een duplicate, nooit een dubbele rij.
   let autoCaptureTimer = null;
   window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
+    // Geen event.source-check: in de isolated world is event.source het
+    // MAIN-world window — een ander object dan de content-script-window,
+    // dus die vergelijking wijst altijd af. De origin- en source-veld-
+    // controles samen zijn voldoende streng.
+    if (event.origin !== location.origin) return;
     const data = event.data;
     if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
     if (data.provider !== 'claude') return;
