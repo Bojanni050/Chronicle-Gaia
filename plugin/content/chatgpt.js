@@ -227,6 +227,24 @@
     await exportToChronicle(button, conv);
   }
 
+  // ── Automatische capture (fase 3) ────────────────────────────────────────
+  // Zelfde patroon als de Claude-provider: het interceptorscript seint, hier
+  // wordt (debounced) het huidige gesprek via de bewezen route opgehaald en
+  // afgeleverd. Herlevering is veilig (listener-dedup).
+  let autoCaptureTimer = null;
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
+    if (data.provider !== 'chatgpt') return;
+    clearTimeout(autoCaptureTimer);
+    autoCaptureTimer = setTimeout(async () => {
+      const conv = await collectConversation();
+      if (conv.error) return;
+      await exportToChronicle(floatingButton, conv);
+    }, 1500);
+  });
+
   // De toolbar-knop van de extensie triggert dezelfde export.
   window.__chronicleUI.bindToolbarClick(() => {
     window.__chronicleUI.setButtonState(floatingButton, 'busy');

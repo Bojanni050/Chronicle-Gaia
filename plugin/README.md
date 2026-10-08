@@ -27,6 +27,28 @@ plugin (content script)  →  service worker (token + retry-queue)
 5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
    op **→ Chronicle**.
 
+## Automatische capture (fase 3)
+
+Naast de knoppen draait er nu een automatische capture: het script
+`content/intercept.js` draait in de MAIN world (vanaf document_start) en
+wikkelt `window.fetch` in. Het antwoordt géén inhoud — het seint alleen
+*"dit gesprek is net bijgewerkt"*:
+
+- claude.ai: na een volledig uitgelezen `POST …/chat_conversations/{uuid}/completion`
+- chatgpt.com: na een `POST /backend-api/conversation`
+
+Het provider-script (isolated world) hoort het signaal via
+`window.postMessage`, wacht 1,5s (debounce — een antwoord arriveert in
+vele kleine reads), haalt het gesprek dan op via de normale bewezen
+API-route en levert het af zoals de knop dat doet. Herlevering is veilig:
+de listener dedupt op URL/contentHash, dus een signaal te veel is hooguit
+`duplicate`, nooit een dubbele rij. Elke gegroeide versie van een gesprek
+komt automatisch in Chronicle (en via de forward in Foundation) terecht.
+
+De knoppen blijven: handmatig forceren en bulk blijven nuttig voor
+gesprekken van vóór de installatie en voor situaties waarin de
+interceptor een endpoint-wijziging niet overleeft.
+
 ## Bulk-export
 
 De tweede knop — **⇊ Alles naar Chronicle** (onder de gewone knop) — haalt de

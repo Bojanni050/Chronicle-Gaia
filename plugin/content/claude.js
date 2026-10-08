@@ -350,6 +350,28 @@
     await exportToChronicle(button, conv);
   }
 
+  // ── Automatische capture (fase 3) ────────────────────────────────────────
+  // Het MAIN-world interceptorscript seint 'conversation-updated' als een
+  // antwoordstream is afgerond. Het gesprek is op dat moment gegroeid; hier
+  // wordt het (debounced) opgehaald via de bewuste API-route en afgeleverd.
+  // Herlevering is veilig: de listener dedupt, dus een signaal te veel is
+  // hooguit een duplicate, nooit een dubbele rij.
+  let autoCaptureTimer = null;
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || data.source !== 'chronicle-intercept' || data.type !== 'conversation-updated') return;
+    if (data.provider !== 'claude') return;
+    // Debounce: een antwoord arriveert in veel kleine afgeronde reads; pas
+    // als de signalen 1,5s stil zijn, is het gesprek stabiel genoeg.
+    clearTimeout(autoCaptureTimer);
+    autoCaptureTimer = setTimeout(async () => {
+      const conv = await collectConversation();
+      if (conv.error) return; // niets zichtbaar; volgende signaal probeert opnieuw
+      await exportToChronicle(floatingButton, conv);
+    }, 1500);
+  });
+
   // De toolbar-knop van de extensie triggert dezelfde export.
   window.__chronicleUI.bindToolbarClick(() => {
     window.__chronicleUI.setButtonState(floatingButton, 'busy');

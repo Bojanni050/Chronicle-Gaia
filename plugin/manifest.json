@@ -3,7 +3,11 @@
   "name": "Chronicle Chat Exporter",
   "version": "0.1.1",
   "description": "Exporteert het huidige claude.ai / chatgpt.com gesprek naar Chronicle (Chronicle-Gaia), dat de archiefkopie bewaart en automatisch naar Foundation's Ingestie Gateway forwardt.",
-  "permissions": ["storage", "scripting", "activeTab"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
   "host_permissions": [
     "https://claude.ai/*",
     "https://chatgpt.com/*",
@@ -15,13 +19,34 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://claude.ai/*"],
-      "js": ["content/normalize.js", "content/claude.js"],
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content/intercept.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "content/normalize.js",
+        "content/claude.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["content/normalize.js", "content/chatgpt.js"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content/normalize.js",
+        "content/chatgpt.js"
+      ],
       "run_at": "document_idle"
     }
   ],
