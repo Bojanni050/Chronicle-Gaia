@@ -79,14 +79,34 @@
     for (const msg of conv.chat_messages || []) {
       let text = '';
       if (Array.isArray(msg.content)) {
-        text = msg.content
-          .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
-          .map((b) => b.text)
-          .join('\n\n');
+        // Text-blokken zijn de kern; thinking-blokken komen er als gemarkeerde
+        // sectie bij (patroon van agoramachina/claude-exporter) — Foundation
+        // krijgt ze, afwijzen/filteren is niet aan de afzender.
+        const parts = [];
+        for (const block of msg.content) {
+          if (block && block.type === 'text' && typeof block.text === 'string') {
+            parts.push(block.text);
+          } else if (block && block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking.trim()) {
+            parts.push('### Thinking\n\n````\n' + block.thinking.trim() + '\n````\n');
+          }
+        }
+        text = parts.join('\n\n');
       } else if (typeof msg.text === 'string') {
         text = msg.text;
       }
-      text = (text || '').trim();
+      // Attachments: naam + geëxtraheerde inhoud erbij, zelfde vorm als
+      // Chronicle's sourceParsers ([Attached: ...]), zodat plugin- en
+      // bestandsimport hetzelfde archiefbeeld opleveren.
+      const extras = [];
+      for (const att of msg.attachments || []) {
+        if (att && att.extracted_content) {
+          extras.push(`[Attached: ${att.file_name || 'attachment'}]\n${att.extracted_content}`);
+        }
+      }
+      for (const f of msg.files || []) {
+        extras.push(`[Attached: ${f && f.file_name ? f.file_name : 'file'} — content not included in this export]`);
+      }
+      text = [text || '', ...extras].filter(Boolean).join('\n\n').trim();
       if (!text) continue;
       turns.push({ role: msg.sender === 'assistant' ? 'assistant' : 'user', text });
     }
