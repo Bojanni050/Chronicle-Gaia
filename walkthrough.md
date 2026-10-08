@@ -488,3 +488,21 @@
   - `plugin/manifest.json` → 0.1.3; `plugin/README.md` bijgewerkt.
   - Validatie: `node --check` ok. Open: herladen + testen; bij falen geeft
     `chatgpt request gezien:` de route die de pagina zelf wél gebruikt.
+
+## 2026-10-08 (Plugin: ChatGPT werkt — bevestigd)
+
+- Findings: Bo herlaadde de extensie; de diagnose-regel gaf de definitieve
+  route: `GET /backend-api/conversations/{id}?num_turns=10&include_has_versions=true`.
+  Onze aanroep (meervoud, zónder query) gaf de volledige mapping terug en de
+  capture landde: `auto-capture: levering 1 van 3 — 7 berichten` →
+  `{"ok":true,"status":201,"action":"create"}` + twee `duplicate`-leveringen.
+  Claude én ChatGPT werken nu.
+- Conclusions:
+  - De pagina zelf leest met `num_turns=10` (alleen recente turns); wij laten de
+    query bewust weg zodat de volledige conversation-mapping wordt opgehaald —
+    dat is precies wat een archief-export wil.
+  - Diagnose-regel terug naar `console.debug`: bruikbaar bij problemen (Verbose),
+    maar geen ruis in de normale console.
+- Actions:
+  - `plugin/content/intercept.js`: `chatgpt request gezien` → `console.debug`.
+  - Validatie: `node --check` ok.

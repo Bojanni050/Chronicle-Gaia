@@ -92,7 +92,7 @@
         !CHATGPT_SEEN.has(method + ' ' + url)
       ) {
         CHATGPT_SEEN.add(method + ' ' + url);
-        console.info('[Chronicle] chatgpt request gezien:', method, url);
+        console.debug('[Chronicle] chatgpt request gezien:', method, url);
       }
     } catch {
       // interceptie mag de pagina nooit breken
