@@ -76,13 +76,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleNativeImport = async () => {
     if (!window.electronAPI) return;
-    const existingIds = JSON.parse(localStorage.getItem('chronicle_chats_v1') || '[]').map((c: any) => c.id);
+    // Dedup against what's really in the archive (the Electron DB), not the
+    // stale localStorage key the renderer no longer writes in native mode.
+    const existing = await window.electronAPI.loadDatabase() || [];
+    const existingIds = existing.map((c: any) => c.id);
     const result = await window.electronAPI.importChats(existingIds);
+    const missing = result.missing?.length ? ` Not downloaded: ${result.missing.join(', ')}.` : '';
     if (result.success && result.chats.length > 0) {
       onNativeImport?.(result.chats);
-      alert(`Successfully imported ${result.chats.length} chats! (Skipped ${result.skipped} duplicates)`);
+      alert(`Successfully imported ${result.chats.length} chats! (Skipped ${result.skipped} duplicates)${missing}`);
     } else if (result.success) {
-      alert("No new conversations found to import.");
+      alert(`No new conversations found to import.${missing}`);
     } else if (result.error) {
       alert(`Import error: ${result.error}`);
     }

@@ -13,6 +13,7 @@ describe('parseClaudeConversation', () => {
   const conv = {
     uuid: 'd9b2f1e0-1111-2222-3333-444455556666',
     name: 'Migraties bespreken',
+    summary: 'Een gesprek over database-migraties.',
     created_at: '2026-03-01T10:00:00.000Z',
     updated_at: '2026-03-02T12:00:00.000Z',
     chat_messages: [
@@ -42,6 +43,11 @@ describe('parseClaudeConversation', () => {
   it('skips non-text content blocks (thinking) without inventing turns', () => {
     const parsed = parseClaudeConversation(conv)!;
     expect(parsed.turns).toHaveLength(2);
+  });
+
+  it('carries the authoring-side summary when the export has one', () => {
+    const parsed = parseClaudeConversation(conv)!;
+    expect(parsed.summary).toBe('Een gesprek over database-migraties.');
   });
 
   it('returns null for an empty conversation', () => {

@@ -287,3 +287,48 @@
   - `types.ts`: `ChatEntry.contentHash`; `electron-main.js`: kolom `"contentHash"`
     (+ ALTER), save/load-mapping; kolomnaam-quoting op de VPS bewezen.
   - Validatie: 62 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-08 (Claude-export: manifest + categorie-zips)
+
+- Findings:
+  - Bo's Claude-export is niet langer één `conversations.json`. De download is
+    nu een `manifest.json` (`data_files[]`) die 6 categorie-zips noemt:
+    `light_metadata`, `projects`, `memories`, `design_chats`, `frames`,
+    `conversations` — elk achter een eenmalige, 24u-geldige link.
+  - De native bulk-import brak daarop: de file-dialog accepteerde alleen
+    `json/md/txt`, en `import-chats` las elk bestand met `fs.readFileSync(...,'utf-8')`
+    → binaire zip faalt. Er was ook nergens zip-extractie in de repo.
+  - Belangrijker: het *gespreksschema binnenin is ongewijzigd* (zelfde array met
+    `uuid`/`name`/`chat_messages[{sender,content}]`). De aanname "de parser moet
+    herschreven" klopt dus niet; alleen de verpakking veranderde. `summary` is
+    nieuw en werd tot nu toe weggegooid.
+  - Losse bug: `SettingsModal.handleNativeImport` riep `onNativeImport?.()`, maar
+    `App.tsx` gaf die prop nooit door. De knop parseerde dus wel, maar zette
+    nooit iets in het archief (loze "Successfully imported N chats"-alert). Ook
+    las hij dedup-ids uit `localStorage.chronicle_chats_v1`, dat in native modus
+    niet meer geschreven wordt (de DB is de bron) → altijd lege set.
+- Conclusions:
+  - De rewrite zit in de container/import-laag, niet in de parser: zip +
+    manifest lezen, gesprekscategorieën eruit halen, de rest (memories, frames,
+    login-data) laten vallen door de strikte `parseClaudeExport`.
+  - Ontbrekende zips worden gerapporteerd in plaats van stil genegeerd, zodat een
+    halve download zichtbaar is.
+  - `fflate` als zip-dep: ~8 kB, pure JS, CJS in het main-proces.
+- Actions:
+  - Nieuw `utils/claudeExportZip.cjs` (Electron-vrij, testbaar):
+    `readJsonEntries`, `isClaudeExportManifest`, `conversationsFromZip`,
+    `conversationsFromManifest` (rapporteert `missing`).
+  - Nieuw `utils/claudeExportZip.test.ts` (6 tests): zip-uitlezen, manifest-herkenning,
+    gesprekken uit één zip, categorieën negeren, ontbrekende zips melden.
+  - `utils/sourceParsers.ts`: `ParsedConversation.summary` + `parseClaudeConversation`
+    neemt `conv.summary` mee; `sourceParsers.test.ts` +1 test.
+  - `electron-main.js` `import-chats`: `.zip`-filter + All Files; zip- of
+    manifest-pad via de nieuwe module; `summary`/`missing` doorgegeven.
+  - `App.tsx`: `handleNativeImport` (loopt elke chat door `handleUpload`, dus
+    dezelfde dedup + Foundation-capture) en `onNativeImport={handleNativeImport}`
+    op `SettingsModal`; `importChats`-type krijgt `missing`.
+  - `components/SettingsModal.tsx`: dedup-ids nu uit `loadDatabase()`; alert toont
+    niet-gedownloade zips.
+  - `package.json`: `fflate` dependency.
+  - Validatie: 92 tests groen, `vite build` ok, `node --check` op
+    `electron-main.js` + `claudeExportZip.cjs` ok.

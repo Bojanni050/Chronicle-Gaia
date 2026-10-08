@@ -41,6 +41,8 @@ export interface ParsedConversation {
   createdAt?: number;
   /** Last activity time (ms) — used as occurredAt. */
   occurredAt?: number;
+  /** Authoring-side summary carried by the export itself (Claude does this). */
+  summary?: string;
   /** Images that are part of this conversation (same source, not invented). */
   images?: ParsedImage[];
 }
@@ -121,6 +123,7 @@ export function parseClaudeConversation(conv: any): ParsedConversation | null {
     sourceProvider: 'claude',
     createdAt: parseTime(conv?.created_at),
     occurredAt: parseTime(conv?.updated_at) ?? parseTime(conv?.created_at),
+    ...(typeof conv?.summary === 'string' && conv.summary.trim() ? { summary: conv.summary.trim() } : {}),
     ...(images.length ? { images } : {}),
   };
 }

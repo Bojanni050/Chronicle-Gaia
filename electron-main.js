@@ -393,35 +393,68 @@ ipcMain.handle('export-chats', async (event, { chats, format }) => {
 
 ipcMain.handle('import-chats', async (event, existingIds) => {
   const { parseConversationJson, parseClaudeExport } = require('./utils/sourceParsers.cjs');
+  const { isClaudeExportManifest, conversationsFromZip, conversationsFromManifest } = require('./utils/claudeExportZip.cjs');
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import chat exports',
+      message: 'Pick a Claude manifest.json, its category .zip files, or a plain JSON/Markdown export.',
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Chat Exports', extensions: ['json', 'md', 'txt'] }]
+      filters: [
+        { name: 'Chat Exports', extensions: ['json', 'md', 'txt', 'zip'] },
+        { name: 'All Files', extensions: ['*'] },
+      ]
     });
     if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, cancelled: true, chats: [], skipped: 0 };
+      return { success: false, cancelled: true, chats: [], skipped: 0, missing: [] };
     }
     const existing = new Set(existingIds || []);
     const chats = [];
+    const missing = [];
     let skipped = 0;
+
     for (const filePath of result.filePaths) {
       const fileName = path.basename(filePath);
       const ext = path.extname(filePath).toLowerCase();
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const stem = fileName.replace(/\.[^.]+$/, '');
 
-      // A file may hold one conversation or many (a Claude export holds all).
+      // A file may hold one conversation or many — a Claude export holds all.
       let parsed = [];
-      if (ext === '.json') {
+      let textHint = '';
+      let isManifest = false;
+
+      if (ext === '.zip') {
+        // A category zip (e.g. conversations-000.zip) or an older all-in-one
+        // export. Anything that is not conversations simply yields nothing.
         try {
-          const json = JSON.parse(content);
-          const claude = parseClaudeExport(json);
-          parsed = claude.length > 0 ? claude : [parseConversationJson(json)].filter(Boolean);
-        } catch {
-          parsed = [];
+          parsed = conversationsFromZip(filePath, parseClaudeExport);
+        } catch (err) {
+          console.error('[Chronicle] zip import failed:', fileName, err);
         }
-      }
-      if (parsed.length === 0) {
-        parsed = [{ content, turns: [], title: fileName.replace(/\.[^.]+$/, ''), sourceProvider: guessSource(fileName, content).toLowerCase() }];
+      } else {
+        textHint = fs.readFileSync(filePath, 'utf-8');
+        if (ext === '.json') {
+          try {
+            const json = JSON.parse(textHint);
+            if (isClaudeExportManifest(json)) {
+              // The newer export: a manifest plus the category zips downloaded
+              // next to it. Missing zips are reported, never silently ignored.
+              isManifest = true;
+              const res = conversationsFromManifest(filePath, json, parseClaudeExport);
+              parsed = res.conversations;
+              missing.push(...res.missing);
+            } else {
+              const claude = parseClaudeExport(json);
+              parsed = claude.length > 0 ? claude : [parseConversationJson(json)].filter(Boolean);
+            }
+          } catch {
+            parsed = [];
+          }
+        }
+        // Anything that didn't parse as a structured conversation stays an opaque
+        // text note (a plain export). A zip's binary never lands here.
+        if (parsed.length === 0 && !isManifest) {
+          parsed = [{ content: textHint, turns: [], title: stem, sourceProvider: guessSource(fileName, textHint).toLowerCase() }];
+        }
       }
 
       let index = 1;
@@ -433,21 +466,22 @@ ipcMain.handle('import-chats', async (event, existingIds) => {
           skipped++;
           continue;
         }
+        const source = conv.sourceProvider ? capitalize(conv.sourceProvider) : guessSource(fileName, textHint);
         chats.push({
           id,
           type: 'chat',
-          title: conv.title || fileName.replace(/\.[^.]+$/, ''),
+          title: conv.title || stem,
           content: conv.content,
-          summary: '',
+          summary: conv.summary || '',
           tags: ['imported'],
-          source: conv.sourceProvider ? capitalize(conv.sourceProvider) : guessSource(fileName, content),
+          source,
           createdAt: conv.createdAt || Date.now(),
           updatedAt: conv.occurredAt || conv.createdAt || Date.now(),
           fileName: label,
           embedding: undefined,
           assets: [],
           capture: {
-            sourceProvider: conv.sourceProvider || guessSource(fileName, content).toLowerCase(),
+            sourceProvider: conv.sourceProvider || source.toLowerCase(),
             ...(conv.url ? { url: conv.url } : {}),
             ...(conv.occurredAt ? { occurredAt: new Date(conv.occurredAt).toISOString() } : {}),
             ...(conv.turns && conv.turns.length ? { turns: conv.turns } : {}),
@@ -455,10 +489,10 @@ ipcMain.handle('import-chats', async (event, existingIds) => {
         });
       }
     }
-    return { success: true, chats, skipped };
+    return { success: true, chats, skipped, missing };
   } catch (err) {
     console.error('[Chronicle] Import Error:', err);
-    return { success: false, error: String(err), chats: [], skipped: 0 };
+    return { success: false, error: String(err), chats: [], skipped: 0, missing: [] };
   }
 });
 

@@ -61,7 +61,7 @@ declare global {
       generateEmbedding: (args: { text: string }) => Promise<{ ok: boolean; embedding?: number[]; error?: string }>;
       fetchModels: () => Promise<{ ok: boolean; models?: string[]; error?: string }>;
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
-      importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, error?: string, cancelled?: boolean}>;
+      importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, missing?: string[], error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
       platform: string;
       onChatIngested?: (callback: (payload: { id: string; action: string; title?: string }) => void) => () => void;
@@ -387,6 +387,24 @@ const App: React.FC = () => {
     if (capture) void captureToFoundation(newChat, attachmentRefs);
   };
 
+  // Bulk import from the native (Electron) picker: one entry per conversation,
+  // each run through the same dedup + Foundation-capture path as any upload.
+  const handleNativeImport = (chats: any[]) => {
+    for (const chat of chats) {
+      handleUpload(
+        chat.content,
+        chat.source,
+        chat.title,
+        chat.summary || '',
+        chat.tags || [],
+        chat.fileName || chat.title,
+        chat.embedding,
+        chat.assets,
+        chat.capture
+      );
+    }
+  };
+
   const handleRetryCapture = (chat: ChatEntry) => {
     void captureToFoundation(chat);
   };
@@ -670,6 +688,7 @@ const App: React.FC = () => {
           onSave={(settings) => setState(prev => ({ ...prev, settings }))}
           onBackup={() => {}} 
           onClearAll={handleClearAll}
+          onNativeImport={handleNativeImport}
         />
       )}
     </div>
