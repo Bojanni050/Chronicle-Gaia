@@ -358,3 +358,26 @@
   - `utils/captureIngest.test.ts`: +1 test (archiefdatum = occurredAt) en +1
     (fallback naar ingest-tijd zonder tijd).
   - Validatie: 93 tests groen, `vite build` ok, `node --check` ok.
+
+## 2026-10-08 (Bestaande imports bijwerken naar hun echte datum)
+
+- Findings:
+  - Bo importeerde opnieuw en alles stond nog op 8 oktober. Twee oorzaken: (1) de
+    nieuwe regel geldt alleen voor nieuwe entries, en (2) de id-dedup slaat een
+    re-import van hetzelfde bestand over, dus bestaande rijen werden nooit
+    bijgewerkt. Bovendien draait de fix pas na `vite build` + herstart.
+  - De echte datum zat wél al in `capture.occurredAt` van elke opgeslagen rij.
+- Conclusions:
+  - Niet alleen nieuwe imports fixen, maar de archiefsdatum bij het **laden**
+    afleiden uit `capture.occurredAt`. Zo corrigeren bestaande rijen zichzelf
+    zonder re-import; idempotent. Rijen zonder capture-moment (losse notitie)
+    houden hun opgeslagen datum.
+- Actions:
+  - `utils/captureIngest.ts`: nieuw `archiveTimestamps(capture, fallback)` als
+    één regel voor "archiefdatum = gespreksmoment"; `normalizeIngestChat`
+    gebruikt het.
+  - `electron-main.js` `load-database`: `createdAt`/`updatedAt` uit
+    `capture.occurredAt` wanneer aanwezig, anders de opgeslagen waarden.
+  - `utils/captureIngest.test.ts`: +2 tests voor `archiveTimestamps` (met/zonder
+    moment).
+  - Validatie: 95 tests groen, `vite build` ok, `node --check` ok.

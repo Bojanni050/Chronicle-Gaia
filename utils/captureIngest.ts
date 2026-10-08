@@ -150,6 +150,22 @@ export interface NormalizedIngestChat {
 }
 
 /**
+ * The archive date is the conversation's own moment (capture.occurredAt), not the
+ * moment it was ingested: the UI sorts and displays by createdAt, so a chat
+ * belongs on its real date. Falls back to `fallback` when the source carries no
+ * time (e.g. a hand-written note). Shared with the DB load path, which uses it to
+ * reconcile rows that were imported before this rule existed.
+ */
+export function archiveTimestamps(
+  capture: { occurredAt?: string } | undefined | null,
+  fallback: number
+): { createdAt: number; updatedAt: number } {
+  const ms = capture && capture.occurredAt ? Date.parse(capture.occurredAt) : NaN;
+  const at = Number.isFinite(ms) ? ms : fallback;
+  return { createdAt: at, updatedAt: at };
+}
+
+/**
  * Normalises a validated IngestChatInput into the archive item and the
  * Foundation payload. `id` is caller-supplied (crypto.randomUUID in the
  * listener) so this stays pure and testable.
@@ -176,7 +192,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   // ingest-tijd: sorteren (App.filteredChats) en de datum op de kaart/zoekfilters
   // werken op createdAt, dus een geïmporteerde chat hoort op zijn echte datum te
   // staan. Valt terug op de ingest-tijd als de bron geen tijd meegaf.
-  const archiveMs = occurredMs ?? now;
+  const { createdAt, updatedAt } = archiveTimestamps(capture, now);
   const foundationPayload = buildChatIngestPayload({
     content,
     title,
@@ -195,8 +211,8 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
       summary: '',
       tags: [],
       source: toSourceType(sourceProvider),
-      createdAt: archiveMs,
-      updatedAt: archiveMs,
+      createdAt,
+      updatedAt,
       capture,
       foundation: { status: 'pending', at: now },
       contentHash: foundationContentHash(content),

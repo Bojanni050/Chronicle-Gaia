@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateIngestChatInput,
   normalizeIngestChat,
+  archiveTimestamps,
   findExistingRow,
   toSourceType,
 } from './captureIngest';
@@ -118,6 +119,20 @@ describe('normalizeIngestChat', () => {
       { role: 'assistant', text: 't' },
       { role: 'user', text: 'h' },
     ]);
+  });
+});
+
+describe('archiveTimestamps', () => {
+  it('uses the conversation moment from capture.occurredAt', () => {
+    const { createdAt, updatedAt } = archiveTimestamps({ occurredAt: '2025-10-09T08:53:20.000Z' }, 12345);
+    expect(createdAt).toBe(1760000000000);
+    expect(updatedAt).toBe(1760000000000);
+  });
+
+  it('falls back when there is no capture or no occurredAt', () => {
+    expect(archiveTimestamps(undefined, 12345)).toEqual({ createdAt: 12345, updatedAt: 12345 });
+    expect(archiveTimestamps({}, 12345)).toEqual({ createdAt: 12345, updatedAt: 12345 });
+    expect(archiveTimestamps({ occurredAt: 'not-a-time' }, 12345)).toEqual({ createdAt: 12345, updatedAt: 12345 });
   });
 });
 

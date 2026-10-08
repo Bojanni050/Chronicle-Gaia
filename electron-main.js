@@ -296,19 +296,29 @@ ipcMain.handle('save-database', async (event, items) => {
 ipcMain.handle('load-database', async () => {
   try {
     const res = await pool.query('SELECT * FROM chats ORDER BY createdAt DESC');
-    return res.rows.map(r => ({
-      ...r,
-      createdAt: Number(r.createdat),
-      updatedAt: Number(r.updatedat),
-      tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags,
-      assets: typeof r.assets === 'string' ? JSON.parse(r.assets) : r.assets,
-      capture: typeof r.capture === 'string' ? JSON.parse(r.capture) : r.capture,
-      foundation: typeof r.foundation === 'string' ? JSON.parse(r.foundation) : r.foundation,
-      sourceFile: typeof r.sourceFile === 'string' ? JSON.parse(r.sourceFile) : r.sourceFile,
-      archived: r.archived === true || r.archived === 't',
-      contentHash: r.contentHash,
-      embedding: r.embedding
-    }));
+    return res.rows.map(r => {
+      const capture = typeof r.capture === 'string' ? JSON.parse(r.capture) : r.capture;
+      // Reconcile the archive date. Rows imported before the "archive date =
+      // conversation date" rule still carry the import time; capture.occurredAt
+      // holds the real moment. Recompute so the archive matches the rule without
+      // needing a re-import. Rows without a capture moment keep their stored
+      // dates untouched (a hand-written note is "now", and stays that way).
+      const occurredMs = capture && capture.occurredAt ? Date.parse(capture.occurredAt) : NaN;
+      const reconciled = Number.isFinite(occurredMs);
+      return {
+        ...r,
+        createdAt: reconciled ? occurredMs : Number(r.createdat),
+        updatedAt: reconciled ? occurredMs : Number(r.updatedat),
+        tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags,
+        assets: typeof r.assets === 'string' ? JSON.parse(r.assets) : r.assets,
+        capture,
+        foundation: typeof r.foundation === 'string' ? JSON.parse(r.foundation) : r.foundation,
+        sourceFile: typeof r.sourceFile === 'string' ? JSON.parse(r.sourceFile) : r.sourceFile,
+        archived: r.archived === true || r.archived === 't',
+        contentHash: r.contentHash,
+        embedding: r.embedding
+      };
+    });
   } catch (err) {
     console.error('[Chronicle] Load Error:', err);
     return [];
