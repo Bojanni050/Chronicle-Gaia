@@ -100,4 +100,5 @@
     buildConversation,
     bindToolbarClick,
   };
+  console.info('[Chronicle] content helper geinjecteerd op', location.host);
 })();

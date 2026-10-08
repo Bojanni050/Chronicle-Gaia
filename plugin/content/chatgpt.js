@@ -9,8 +9,6 @@
  * SPA-navigatie). De tweede run stopt in de guard.
  */
 (() => {
-  if (window.__chronicleChatgptInjected) return;
-  window.__chronicleChatgptInjected = true;
 
   const { makeButton, exportToChronicle, buildConversation } = window.__chronicleUI;
 
@@ -115,8 +113,13 @@
     });
   }
 
-  const floatingButton = makeButton(async (event) => {
-    await runExport(event.currentTarget);
+  const floatingButton = makeButton(() => {
+    // Directe feedback, vóór async werk: als de klik iets doet, zie je het meteen.
+    window.__chronicleUI.setButtonState(floatingButton, 'busy');
+    runExport(floatingButton).catch((err) => {
+      floatingButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
+      setTimeout(() => window.__chronicleUI.setButtonState(floatingButton, 'idle'), 6000);
+    });
   });
 
   async function runExport(button) {
@@ -130,5 +133,11 @@
   }
 
   // De toolbar-knop van de extensie triggert dezelfde export.
-  window.__chronicleUI.bindToolbarClick(() => runExport(floatingButton));
+  window.__chronicleUI.bindToolbarClick(() => {
+    window.__chronicleUI.setButtonState(floatingButton, 'busy');
+    runExport(floatingButton).catch((err) => {
+      floatingButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
+      setTimeout(() => window.__chronicleUI.setButtonState(floatingButton, 'idle'), 6000);
+    });
+  });
 })();
