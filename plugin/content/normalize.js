@@ -14,7 +14,7 @@
     busy: '…',
     create: '✓ In Chronicle',
     update: '✓ Bijgewerkt',
-    duplicate: '✓ Al bekend',
+    duplicate: '✓ Actueel',
     queued: '⏳ In wachtrij',
   };
 

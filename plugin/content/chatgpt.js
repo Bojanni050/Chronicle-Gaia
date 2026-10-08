@@ -21,6 +21,7 @@
     const res = await fetch(`/backend-api/conversation/${id}`, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
+      cache: 'no-store',
     });
     if (!res.ok) throw new Error(`chatgpt API ${res.status}`);
     return res.json();
@@ -132,6 +133,7 @@
       const res = await fetch(`/backend-api/conversations?offset=${offset}&limit=100&order=updated`, {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
+      cache: 'no-store',
       });
       if (!res.ok) throw new Error(`chatgpt conversations API ${res.status}`);
       const body = await res.json();
@@ -244,7 +246,7 @@
           if (i === ATTEMPTS.length - 1) console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
           return;
         }
-        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length);
+        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length, '—', (conv.turns || []).length, 'berichten');
         await exportToChronicle(floatingButton, conv);
       }, delay);
     });

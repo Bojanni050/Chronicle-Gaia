@@ -52,6 +52,7 @@
       const res = await fetch('/api/organizations', {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
+      cache: 'no-store',
       });
       if (!res.ok) throw new Error(String(res.status));
       const body = await res.json();
@@ -69,6 +70,7 @@
     const res = await fetch(`/api/organizations/${org}/chat_conversations/${uuid}?tree=True&rendering_mode=messages&render_all_tools=true`, {
       headers: { Accept: 'application/json' },
       credentials: 'same-origin',
+      cache: 'no-store',
     });
     if (!res.ok) throw new Error(`claude API ${res.status}`);
     return res.json();
@@ -382,7 +384,7 @@
           if (i === ATTEMPTS.length - 1) console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
           return;
         }
-        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length);
+        console.info('[Chronicle] auto-capture: levering', i + 1, 'van', ATTEMPTS.length, '—', (conv.turns || []).length, 'berichten');
         await exportToChronicle(floatingButton, conv);
       }, delay);
     });
