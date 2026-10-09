@@ -7,4 +7,5 @@ release/
 .DS_Store
 foundation.local.json
 utils/sourceParsers.cjs
-utils/captureIngest.cjs.playwright-mcp/
+utils/captureIngest.cjs
+.playwright-mcp/
