@@ -136,6 +136,8 @@ export interface Settings {
   availableModels: string[];
   userAvatar?: string;
   userName?: string;
+  /** Verberg het venster naar het systeemvak bij minimaliseren. */
+  minimizeToTray: boolean;
 }
 
 export type ViewMode = 'dashboard' | 'archive' | 'mindmap' | 'search';

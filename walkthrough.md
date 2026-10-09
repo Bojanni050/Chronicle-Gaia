@@ -619,3 +619,36 @@
     `[Chronicle] intercept: mistral` → `auto-capture: levering …`. Bij falen
     geeft `request gezien: POST …/api/chat` de route; de API-read logt zijn
     status/fout.
+
+## 2026-10-09 (Minimize to tray-optie)
+
+- Findings: Er was geen manier om Chronicle naar het systeemvak te verbergen;
+  minimaliseren ging altijd naar de taakbalk. De main-process had ook geen
+  tray-icoon en geen enkel kanaal om een renderer-voorkeur naar de main te
+  sturen.
+- Conclusions:
+  - De optie hoort in `Settings` (net als thema) en wordt via localStorage
+    bewaard; de main-process beslist op basis daarvan of minimaliseren het
+    venster verbergt. Een klein IPC-kanaal (`set-minimize-to-tray`) houdt de
+    twee kanten in sync zonder de token/secret-aanpak te raken.
+  - Tray wordt pas aangemaakt als de optie aan staat en weer opgeruimd bij
+    uitzetten, zodat er nooit een pictogram verschijnt zonder dat erom gevraagd
+    is. Klikken op het pictogram (of "Open Chronicle" in het menu) haalt het
+    venster terug; het menu heeft ook Quit.
+  - Het icoon is gegenereerd met een dependency-vrij script (PNG via zlib) in
+    het app-palet (#8A9482), 32×32 met 4× supersampling voor gladde randen.
+- Actions:
+  - `scripts/make-tray-icon.js` (nieuw) + `assets/tray-icon.png` (gegenereerd);
+    `assets/**/*` zat al in de electron-builder `files`-lijst.
+  - `electron-main.js`: `Tray`/`Menu`/`nativeImage`-import, `createTray`/
+    `destroyTray`/`setMinimizeToTray`/`showMainWindow`, `minimize`-handler in
+    `createWindow`, IPC `set-minimize-to-tray`.
+  - `electron-preload.js`: `setMinimizeToTray`-bridge.
+  - `types.ts`: `Settings.minimizeToTray`; `App.tsx`: default `false`, type-
+    declaratie en het doorgeven in de settings-persist-effect.
+  - `components/SettingsModal.tsx`: toggle in de General-tab (sectie "Window").
+  - Validatie: `node --check` op main/preload/script, `vite build` ok,
+    95 tests groen. `npm run build` (electron-builder) faalt op deze machine op
+    de bekende winCodeSign-symlink-privilege, ongewijzigd t.o.v. ervoor.
+  - Open: optie live testen in een gepackte/dev-app — minimaliseren zou het
+    venster moeten verbergen en het tray-klik het moeten terugbrengen.

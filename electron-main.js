@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu, nativeImage } = require('electron');
 const { startIngestListener } = require('./services/ingest-listener');
 const path = require('path');
 const fs = require('fs');
@@ -761,6 +761,54 @@ ipcMain.on('notify', (event, { title, body }) => {
   }
 });
 
+// ── Systeemvak (minimize-to-tray) ────────────────────────────────────────────
+// Alleen actief als de gebruiker de optie aanzet (Voorkeuren → Algemeen). Het
+// pictogram wordt dan aangemaakt en bij het uitzetten weer opgeruimd, zodat er
+// nooit een systeemvak-icoon verschijnt zonder dat erom gevraagd is. Staat de
+// optie aan, dan verbergt minimaliseren het venster naar het systeemvak in
+// plaats van naar de taakbalk; een klik op het pictogram brengt het terug.
+let tray = null;
+let minimizeToTray = false;
+
+function showMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray-icon.png'));
+  tray = new Tray(icon);
+  tray.setToolTip('Chronicle');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Chronicle', click: showMainWindow },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); } },
+  ]));
+  // Linksklik op het pictogram brengt het venster terug.
+  tray.on('click', showMainWindow);
+}
+
+function destroyTray() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+function setMinimizeToTray(enabled) {
+  minimizeToTray = !!enabled;
+  if (minimizeToTray) createTray();
+  else destroyTray();
+}
+
+ipcMain.handle('set-minimize-to-tray', (event, enabled) => {
+  setMinimizeToTray(enabled);
+  return true;
+});
+
 // Original boilerplate (rest of file) remains unchanged for window creation and other handlers...
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -771,6 +819,12 @@ function createWindow() {
       preload: path.join(__dirname, 'electron-preload.js'), 
       contextIsolation: true 
     },
+  });
+  // Minimaliseren naar het systeemvak zodra de optie aan staat.
+  mainWindow.on('minimize', (event) => {
+    if (!minimizeToTray) return;
+    event.preventDefault();
+    mainWindow.hide();
   });
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {

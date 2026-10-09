@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportChats: (chats, format) => ipcRenderer.invoke('export-chats', { chats, format }),
   importChats: (existingIds) => ipcRenderer.invoke('import-chats', existingIds),
   sendNotification: (title, body) => ipcRenderer.send('notify', { title, body }),
+  setMinimizeToTray: (enabled) => ipcRenderer.invoke('set-minimize-to-tray', enabled),
   platform: process.platform,
   onChatIngested: (callback) => {
     const handler = (_event, payload) => callback(payload);

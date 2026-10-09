@@ -167,6 +167,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </section>
 
               <section>
+                <label className="block text-[10px] font-bold text-moss-brown mb-4 uppercase tracking-widest">Window</label>
+                <button
+                  onClick={() => setLocalSettings({ ...localSettings, minimizeToTray: !localSettings.minimizeToTray })}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all ${localSettings.minimizeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
+                >
+                  <span>
+                    <span className="block text-xs font-bold text-earth-dark dark:text-white">Minimize to tray</span>
+                    <span className="block text-[10px] text-moss-brown">Verberg het venster naar het systeemvak in plaats van de taakbalk. Klik op het pictogram om het terug te halen.</span>
+                  </span>
+                  <span className={`shrink-0 w-10 h-6 rounded-full p-0.5 transition-all ${localSettings.minimizeToTray ? 'bg-sage-green' : 'bg-sandstone dark:bg-slate-600'}`}>
+                    <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${localSettings.minimizeToTray ? 'translate-x-4' : ''}`} />
+                  </span>
+                </button>
+              </section>
+
+              <section>
                 <label className="block text-[10px] font-bold text-moss-brown mb-4 uppercase tracking-widest">Data Management</label>
                 <div className="grid grid-cols-2 gap-3">
                   {window.electronAPI && (

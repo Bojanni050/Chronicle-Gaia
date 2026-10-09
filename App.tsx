@@ -64,6 +64,7 @@ declare global {
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, missing?: string[], error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
+      setMinimizeToTray: (enabled: boolean) => Promise<boolean>;
       platform: string;
       onChatIngested?: (callback: (payload: { id: string; action: string; title?: string }) => void) => () => void;
     };
@@ -78,7 +79,8 @@ const DEFAULT_SETTINGS: Settings = {
   relatedChatsLimit: 9,
   availableModels: [],
   userAvatar: undefined,
-  userName: ''
+  userName: '',
+  minimizeToTray: false
 };
 
 type ImportNotice = { kind: 'duplicate' | 'updated'; title: string } | null;
@@ -196,6 +198,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+    // De main-process beslist of minimaliseren naar het systeemvak gaat; die
+    // keuze leeft hier in localStorage, dus geef hem bij elke wijziging door.
+    window.electronAPI?.setMinimizeToTray?.(state.settings.minimizeToTray ?? false);
   }, [state.settings]);
 
   const handleAddLink = async (fromId: string, toId: string, type?: string) => {
