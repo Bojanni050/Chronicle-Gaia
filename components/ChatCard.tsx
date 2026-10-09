@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ChatEntry, SourceType, ItemType } from '../types';
-import { TagIcon, MessageIcon, PencilIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, TerminalIcon } from './Icons';
+import { TagIcon, MessageIcon, PencilIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, MistralIcon, TerminalIcon } from './Icons';
 
 interface ChatCardProps {
   chat: ChatEntry;
@@ -21,6 +21,7 @@ const SourceBadge: React.FC<{ source: string; type: ItemType }> = ({ source, typ
     if (s.includes('chatgpt')) return <OpenAIIcon className="w-2.5 h-2.5" />;
     if (s.includes('claude')) return <ClaudeIcon className="w-2.5 h-2.5" />;
     if (s.includes('gemini')) return <GeminiIcon className="w-2.5 h-2.5" />;
+    if (s.includes('mistral')) return <MistralIcon className="w-2.5 h-2.5" />;
     if (s.includes('local') || s.includes('qwen') || s.includes('llama')) return <TerminalIcon className="w-2.5 h-2.5" />;
     
     return <MessageIcon className="w-2.5 h-2.5" />;

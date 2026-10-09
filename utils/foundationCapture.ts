@@ -121,6 +121,7 @@ export function toSourceProvider(source?: string): string | undefined {
     chatgpt: 'chatgpt',
     claude: 'claude',
     gemini: 'gemini',
+    mistral: 'mistral',
     qwen: 'qwen',
     'local llm': 'local',
     other: 'other',

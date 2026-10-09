@@ -1,0 +1,18 @@
+- generic [active] [ref=f4e1]:
+  - main [ref=f4e2]:
+    - generic [ref=f4e11]:
+      - generic [ref=f4e12]:
+        - generic [ref=f4e13]:
+          - button [ref=f4e14] [cursor=pointer]:
+            - button "Thema wijzigen" [ref=f4e15]
+          - button [ref=f4e19] [cursor=pointer]:
+            - button "Privacy" [ref=f4e20]
+        - generic [ref=f4e24]:
+          - button "Inloggen" [ref=f4e25] [cursor=pointer]
+          - button "Aanmelden" [ref=f4e26] [cursor=pointer]
+      - generic [ref=f4e49]:
+        - button "Instellingenmenu openen" [ref=f4e51] [cursor=pointer]
+        - generic [ref=f4e53]:
+          - button "Snel" [ref=f4e56] [cursor=pointer]
+          - button "Spraakmodus" [ref=f4e61] [cursor=pointer]
+  - region "Notifications alt+T"

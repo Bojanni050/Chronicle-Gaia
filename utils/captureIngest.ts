@@ -57,6 +57,7 @@ export function toSourceType(sourceProvider?: string): string {
     chatgpt: 'ChatGPT',
     claude: 'Claude',
     gemini: 'Gemini',
+    mistral: 'Mistral',
     qwen: 'Qwen',
     local: 'Local LLM',
     other: 'Other',

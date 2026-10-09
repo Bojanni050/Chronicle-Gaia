@@ -14,7 +14,7 @@
  *   - plain JSON arrays / {messages|history|conversation} (existing behaviour)
  */
 
-export type ParsedSourceProvider = 'chatgpt' | 'claude' | 'gemini' | 'qwen' | 'local' | 'other';
+export type ParsedSourceProvider = 'chatgpt' | 'claude' | 'gemini' | 'mistral' | 'qwen' | 'local' | 'other';
 
 export interface ParsedTurn {
   role: 'user' | 'assistant';

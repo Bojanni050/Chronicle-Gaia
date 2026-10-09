@@ -1,8 +1,8 @@
 # Chronicle Chat Exporter (browserplugin)
 
-Chrome-extensie (MV3) die het huidige gesprek op **claude.ai**, **chatgpt.com**
-en **gemini.google.com** met één klik aflevert bij Chronicle — niet rechtstreeks
-bij Foundation. Chronicle
+Chrome-extensie (MV3) die het huidige gesprek op **claude.ai**, **chatgpt.com**,
+**gemini.google.com** en **chat.mistral.ai** met één klik aflevert bij
+Chronicle — niet rechtstreeks bij Foundation. Chronicle
 is de deur: de listener schrijft de archiefkopie in de eigen `chats`-tabel en
 forwardt dezelfde raw velden automatisch naar Foundation's Ingestie Gateway
 (`POST /api/ingest/chat`, `source: "chronicle-capture"`).
@@ -42,6 +42,8 @@ wikkelt `window.fetch` in. Het antwoordt géén inhoud — het seint alleen
   een antwoord klaar is met streamen (groeit t.o.v. de baseline; het openen van
   een oud gesprek levert niets op). De `StreamGenerate`-POST is een bonus-trigger
   maar niet de basis — Gemini's netwerkroute is ondoorzichtig en verandert.
+- chat.mistral.ai: na een `POST /api/chat` (of `/api/chat/resume` bij een
+  hervatte stream)
 
 Het provider-script (isolated world) hoort het signaal via
 `window.postMessage`, wacht 1,5s (debounce — een antwoord arriveert in
@@ -65,6 +67,8 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
 
 - Claude: `GET /api/organizations/{org}/chat_conversations` (cursor-paginering)
 - ChatGPT: `GET /backend-api/conversations` (offset-paginering)
+- Mistral: nog géén bulk — alleen het huidige gesprek + auto-capture (per
+  afspraak). Le Chat praat via tRPC (`chat.last` voor de lijst); dat kan later.
 - Gemini: de (gevirtualiseerde) zijbalk uitvouwen en uitlezen; elk gesprek
   wordt aangeklikt en de DOM gescrapet (Gemini laadt berichten alleen na een
   klik, niet via directe `/app/{id}`-navigatie)
@@ -85,7 +89,7 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
 ## Bouwvorm
 
 - `manifest.json` — MV3, host-permissies alleen `claude.ai`, `chatgpt.com`,
-  `gemini.google.com` en `127.0.0.1`.
+  `gemini.google.com`, `chat.mistral.ai` en `127.0.0.1`.
 - `service-worker.js` — de enige plek met het token; client-side typeward
   (server-owned velden worden al in de plugin geweigerd, vóór verzending)
   en een retry-queue die alleen transport-fouten bewaart (4xx is definitief
@@ -106,6 +110,9 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
   `davidmalko87/gemini-chat-exporter` (`.conversation-container`,
   `user-query .query-text`, `model-response .markdown`). Bulk klikt de zijbalk-
   anchors aan (met stabiliteitswacht tegen het "stale body"-probleem).
+- `content/mistral.js` — Le Chat leest via tRPC (`chat.byId` voor de titel,
+  `message.all` voor de berichten met `role` + `contentChunks`) en het seint op
+  `POST /api/chat`. Alleen huidig gesprek + auto-capture; DOM-fallback erachter.
 - `content/normalize.js` — gedeelde knop + statusfeedback + de
   ParsedConversation-whitelist.
 - `options/` — listener-URL + token (`chrome.storage.local`).

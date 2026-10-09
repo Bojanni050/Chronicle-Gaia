@@ -1,0 +1,24 @@
+- generic [ref=f3e1]:
+  - generic [ref=f3e5]:
+    - generic [ref=f3e7]:
+      - heading "Laten we beginnen met bouwen" [level=1] [ref=f3e20]
+      - generic [ref=f3e21]:
+        - generic [ref=f3e22]: Hieronder inloggen of aanmelden
+        - generic [ref=f3e24]:
+          - generic [ref=f3e25]:
+            - text: E-mail
+            - link "Wachtwoord vergeten?" [ref=f3e27] [cursor=pointer]:
+              - /url: https://auth.mistral.ai/self-service/recovery/browser?return_to=https%3A%2F%2Fchat.mistral.ai%2Fchat%3Fpending_auth_prompt%3Ddb4a241d-b9f2-4138-b850-1088c61feba2
+          - textbox "E-mail Wachtwoord vergeten?" [active] [ref=f3e28]:
+            - /placeholder: you@example.com
+        - generic [ref=f3e29]:
+          - button "Sign in with Apple" [ref=f3e30] [cursor=pointer]
+          - button "Sign in with Google" [ref=f3e32] [cursor=pointer]
+          - button "Sign in with Microsoft" [ref=f3e34] [cursor=pointer]
+    - generic:
+      - link "Servicevoorwaarden" [ref=f3e36] [cursor=pointer]:
+        - /url: https://legal.mistral.ai/terms
+      - link "Privacybeleid" [ref=f3e37] [cursor=pointer]:
+        - /url: https://legal.mistral.ai/terms/privacy-policy
+  - region "Notifications alt+T"
+  - alert [ref=f3e38]

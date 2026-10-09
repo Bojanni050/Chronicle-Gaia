@@ -3,6 +3,7 @@ export enum SourceType {
   CHATGPT = 'ChatGPT',
   CLAUDE = 'Claude',
   GEMINI = 'Gemini',
+  MISTRAL = 'Mistral',
   QWEN = 'Qwen',
   LOCAL = 'Local LLM',
   OTHER = 'Other',

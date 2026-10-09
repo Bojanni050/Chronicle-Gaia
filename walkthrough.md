@@ -583,3 +583,39 @@
 - Conclusions: `year: 'numeric'` toegevoegd — nu "24 dec 2025". Geldt voor de
   kaart; er is geen tweede plek met deze maand/dag-only formattering.
 - Actions: `components/ChatCard.tsx` (dateStr-options); `vite build` ok.
+
+## 2026-10-09 (Plugin: Mistral als vierde provider — huidig + auto)
+
+- Findings: Plugin moet ook chat.mistral.ai (Le Chat) kunnen. Live uitgezocht:
+  Le Chat is een Next.js-app die via **tRPC** praat (`/api/trpc/<router>.<proc>`)
+  en antwoorden streamt via `POST /api/chat` (+ `/api/chat/resume`). Lezen:
+  `chat.byId` met `{id}` (uuid) voor de titel en `message.all` met `{chatId}`
+  voor `{items:[berichten]}`. Berichten hebben `role` (user/assistant/system/
+  tool) en `contentChunks` (soms een `content`-string). Anoniem verzenden
+  redirect naar login, dus de echte send is niet live te observeren — de
+  endpoints komen uit de clientbundel en zijn met een probe bevestigd
+  (`chat.byId`/`message.all` bestaan, eisen een uuid; `chat.delete` is een POST).
+- Conclusions:
+  - Zelfde route-aanpak als ChatGPT: API eerst, DOM-fallback erachter. Send-sein
+    op `POST /api/chat` (fetch). Geen bulk (per afspraak alleen huidig + auto).
+  - De plugin alleen was niet genoeg: Mistral ontbrak in `SourceType` en in de
+    twee provider-maps, waardoor een import als "Other" zou landen en de
+    Foundation-dedup-provider fout zou zijn.
+- Actions:
+  - `plugin/content/mistral.js` (nieuw): tRPC-read (`chat.byId`, `message.all`),
+    defensieve chunk→tekst, DOM-fallback, knop + toolbar + auto-capture.
+  - `plugin/content/intercept.js`: `MISTRAL_CHAT` (`/api/chat`, `/api/chat/resume`)
+    → `signal('mistral')`; diagnose verbreed naar `/api/chat`.
+  - `plugin/manifest.json` → 0.3.0: host-permissie, intercept-match en
+    provider-entry voor `chat.mistral.ai`.
+  - `types.ts` `SourceType.MISTRAL`; `utils/captureIngest.ts` + `utils/foundationCapture.ts`
+    provider-maps; `utils/sourceParsers.ts` union.
+  - `components/Icons.tsx` `MistralIcon`; `components/ChatCard.tsx`-branch;
+    `components/MindMap.tsx`-kleur.
+  - `plugin/README.md` bijgewerkt.
+  - Validatie: `npm run build:parsers` (captureIngest.cjs), 95 tests groen,
+    `vite build` ok, `node --check` op plugin + main.
+  - Open: extensie herladen; op chat.mistral.ai een bericht sturen en kijken naar
+    `[Chronicle] intercept: mistral` → `auto-capture: levering …`. Bij falen
+    geeft `request gezien: POST …/api/chat` de route; de API-read logt zijn
+    status/fout.

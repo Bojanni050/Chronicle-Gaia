@@ -1,0 +1,56 @@
+- generic:
+  - main [aria-hidden]:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - button:
+                            - button
+                          - button:
+                            - button
+                        - generic:
+                          - button: Inloggen
+                          - button: Aanmelden
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - generic:
+                                            - button
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button:
+                                                  - generic: Snel
+                                            - generic:
+                                              - button
+      - generic:
+        - button
+  - region "Notifications alt+T"
+  - iframe [aria-hidden] [ref=e1]
+  - alert
+  - dialog [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Vibe gebruiksvoorwaarden" [level=2] [ref=e5]
+      - paragraph [ref=e6]:
+        - text: Je moet onze
+        - link "gebruiksvoorwaarden" [ref=e7] [cursor=pointer]:
+          - /url: /legal/terms
+        - text: en
+        - link "privacybeleid" [ref=e8] [cursor=pointer]:
+          - /url: /legal/privacy-policy
+        - text: accepteren om Vibe te gaan gebruiken.
+    - button "Accepteren en doorgaan" [active] [ref=e9] [cursor=pointer]

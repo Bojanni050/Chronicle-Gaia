@@ -18,6 +18,7 @@
  *    (huidige streaming-route) — niet de /prepare- en /updates-subroutes, die
  *    accepteren geen POST.
  *  - Gemini: POST …/BardChatUi/data/…StreamGenerate (fetch óf XHR)
+ *  - Mistral: POST /api/chat en /api/chat/resume
  */
 (() => {
   if (window.__chronicleInterceptInstalled) return;
@@ -47,6 +48,9 @@
   const CHATGPT_CONVERSATION = /\/backend-api\/(?:f\/)?conversation(?:[/?]|$)/i;
   // Gemini stuurt een antwoord via de StreamGenerate-RPC (fetch óf XHR).
   const GEMINI_STREAM = /\/BardChatUi\/data\/[^?]*StreamGenerate/i;
+  // Mistral (Le Chat) stuurt via POST /api/chat; een hervatte stream via
+  // /api/chat/resume. Beide zijn gewone fetch-POST's.
+  const MISTRAL_CHAT = /\/api\/chat(?:\/resume)?(?:\?|$)/i;
   // Diagnose: requests naar een conversation-route die we niet matchen — send
   // óf read — één keer loggen, zodat een volgende routewijziging zichtbaar is.
   const SEEN_REQUESTS = new Set();
@@ -88,6 +92,10 @@
           signal('gemini');
           return res;
         }
+        if (MISTRAL_CHAT.test(url)) {
+          signal('mistral');
+          return res;
+        }
       }
 
       // Diagnose: elke conversation-request (welke methode dan ook) één keer
@@ -95,7 +103,8 @@
       // zichtbaar in de console in plaats van een stille breuk.
       if (
         (/\/backend-api\/[^?]*conversation/i.test(url) && !/\/(bazaar|ads)\b/i.test(url)) ||
-        /\/BardChatUi\/data\//i.test(url)
+        /\/BardChatUi\/data\//i.test(url) ||
+        /\/api\/chat/i.test(url)
       ) {
         const key = method + ' ' + url;
         if (!SEEN_REQUESTS.has(key)) {

@@ -163,6 +163,18 @@ export const ClaudeIcon = ({ className = "w-5 h-5" }: IconProps) => (
   </svg>
 );
 
+export const MistralIcon = ({ className = "w-5 h-5" }: IconProps) => (
+  <svg className={className} viewBox="0 0 100 100" fill="currentColor" aria-hidden="true">
+    <rect x="0" y="0" width="100" height="18"/>
+    <rect x="0" y="20.5" width="33" height="18"/>
+    <rect x="67" y="20.5" width="33" height="18"/>
+    <rect x="33" y="41" width="34" height="18"/>
+    <rect x="0" y="61.5" width="33" height="18"/>
+    <rect x="67" y="61.5" width="33" height="18"/>
+    <rect x="0" y="82" width="100" height="18"/>
+  </svg>
+);
+
 export const GeminiIcon = ({ className = "w-5 h-5" }: IconProps) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 24c-1.3 0-2.4-.4-3.3-1.3-.9-.9-1.3-2-1.3-3.3s.4-2.4 1.3-3.3c.9-.9 2-1.3 3.3-1.3s2.4.4 3.3 1.3c.9.9 1.3 2 1.3 3.3s-.4 2.4-1.3 3.3c-.9.9-2 1.3-3.3 1.3zM4.3 16.3c-.9-.9-1.3-2-1.3-3.3s.4-2.4 1.3-3.3c.9-.9 2-1.3 3.3-1.3s2.4.4 3.3 1.3c.9.9 1.3 2 1.3 3.3s-.4 2.4-1.3 3.3c-.9.9-2 1.3-3.3 1.3s-2.4-.4-3.3-1.3zm11.1-11.1c-.9-.9-1.3-2-1.3-3.3s.4-2.4 1.3-3.3c.9-.9 2-1.3 3.3-1.3s2.4.4 3.3 1.3c.9.9 1.3 2 1.3 3.3s-.4 2.4-1.3 3.3c-.9.9-2 1.3-3.3 1.3s-2.4-.4-3.3-1.3z"/>

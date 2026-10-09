@@ -30,6 +30,7 @@ const SOURCE_COLORS: Record<string, string> = {
   [SourceType.CHATGPT]: '#22c55e', // green-500
   [SourceType.CLAUDE]: '#f97316', // orange-500
   [SourceType.GEMINI]: '#3b82f6', // blue-500
+  [SourceType.MISTRAL]: '#f59e0b', // amber-500
   [SourceType.QWEN]: '#6366f1',   // indigo-500 (Distinct color for Qwen)
   [SourceType.LOCAL]: '#a855f7', // purple-500
   [SourceType.OTHER]: '#94a3b8', // slate-400
