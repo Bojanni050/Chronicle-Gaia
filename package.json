@@ -2,6 +2,7 @@
   "name": "chronicle-ai-archive",
   "version": "1.0.0",
   "description": "Native desktop version of the Chronicle AI Archive",
+  "author": "Studio Bo",
   "main": "electron-main.js",
   "scripts": {
     "start": "vite build && electron .",
