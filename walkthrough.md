@@ -652,3 +652,48 @@
     de bekende winCodeSign-symlink-privilege, ongewijzigd t.o.v. ervoor.
   - Open: optie live testen in een gepackte/dev-app — minimaliseren zou het
     venster moeten verbergen en het tray-klik het moeten terugbrengen.
+
+## 2026-10-12 (Installable NSIS-exe bouwen)
+
+- Findings: `npm run build` bleef steken op `Sub items Errors: 2 … Cannot create
+  symbolic link … winCodeSign\<hash>\darwin\10.12\lib\libcrypto.dylib` en daarna
+  `Archives with Errors: 1`. Dat blokkeerde de NSIS-installer; alleen
+  `release/win-unpacked/` werd geproduceerd. 7-Zip (via `app-builder`) pakt
+  `winCodeSign-2.6.0.7z` uit en moet daarin de twee darwin-symlinks aanmaken;
+  zonder `SeCreateSymbolicLinkPrivilege` (taakbalk: geen Developer Mode, geen
+  admin-shell) mislukt dat en geeft 7za exit 2, wat electron-builder als
+  mislukte extractie ziet. Alle overige bestanden in de archiefmap zijn wél
+  uitgepakt; de twee dylibs zijn 0-byte resten.
+- Conclusions:
+  - De archiefmap van winCodeSign is inhoudelijk compleet genoeg: de twee
+    darwin-symlinks zijn voor een Windows-build irrelevant (`rcedit-x64.exe` en
+    `windows-6/signtool.exe` zijn er wel). Daarom is de bestaande extractie
+    gekopieerd naar de mapnaam die electron-builder verwacht
+    (`Cache/winCodeSign/winCodeSign-2.6.0`), waarna de download/extractie werd
+    overgeslagen en de build doorliep.
+  - Dit is een workaround, geen structurele fix: de echte oplossing blijft
+    Developer Mode aanzetten (of een admin-shell), want dan slaagt de
+    symlink-extractie en is de handmatige cache-seed niet nodig.
+- Actions:
+  - Geen codewijziging. Cache geseed: `%LOCALAPPDATA%\electron-builder\Cache\
+    winCodeSign\winCodeSign-2.6.0` (kopie van een geslaagde extractie).
+  - Resultaat: `release/Chronicle Setup 1.0.0.exe` (81 MB, NSIS one-click,
+    perMachine=false) + `.blockmap`.
+  - Aandachtspunten voor de volgende build:
+    - `npm run build` draait géén `vite build`; eerst renderer bouwen, anders
+      wordt een verouderde `dist/` verpakt (`release/win-unpacked` was van
+      vóór de laatste rendererwijzigingen).
+    - Geen app-icoon: `default Electron icon is used` en `author is missed in
+      the package.json`. Voor een nette installer `build.win.icon`
+      (`assets/icon.ico`) en `author` toevoegen.
+    - `.env.local` stond niet in `build.files`; inmiddels toegevoegd, zodat de
+      geïnstalleerde app de `API_KEY` bij zich heeft (`loadEnvLocal` leest
+      `.env.local` via `app.getAppPath()`, en die asar-lezing werkt met
+      Electron's fs-patch). Gevolg: de sleutel zit in de installer en is er met
+      `asar extract` uit te halen — alleen deelbare builds zonder eigen key
+      weggeven. Het Foundation-tokenbestand wordt nog steeds niet meegepakt
+      (die zoekpaden wijzen naar `<app>/../Foundation/...`), dus Foundation-
+      levering blijft afhankelijk van `FOUNDATION_TOKEN`/`FOUNDATION_URL` in de
+      omgeving of `foundation.local.json`.
+  - Validatie: `npx electron-builder --win nsis` → exit 0; installer aanwezig
+    in `release/`.

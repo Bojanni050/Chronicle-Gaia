@@ -48,6 +48,7 @@
       "dist/**/*",
       "electron-main.js",
       "electron-preload.js",
+      ".env.local",
       "assets/**/*"
     ],
     "directories": {
