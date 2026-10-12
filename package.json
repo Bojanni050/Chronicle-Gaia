@@ -58,6 +58,7 @@
       "category": "public.app-category.productivity"
     },
     "win": {
+      "icon": "assets/icon.png",
       "target": "nsis"
     },
     "linux": {

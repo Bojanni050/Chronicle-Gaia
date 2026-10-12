@@ -697,3 +697,36 @@
       omgeving of `foundation.local.json`.
   - Validatie: `npx electron-builder --win nsis` → exit 0; installer aanwezig
     in `release/`.
+
+## 2026-10-12 (App-icoon en author)
+
+- Findings: In `assets/` stonden `icon.ico` en `build.win.ico`, maar beide zijn
+  byte-identieke **PNG's** van 1024×1024 met een `.ico`-extensie. Met
+  `build.win.icon: assets/icon.ico` faalde de build op
+  `rcedit-x64.exe … Reserved header is not 0 or image type is not icon`: de
+  `icon`-taak van app-builder converteert alleen als de extensie nog niet de
+  doelvorm heeft, dus een PNG onder de naam `.ico` wordt ongewijzigd aan rcedit
+  doorgegeven en die weigert het.
+- Conclusions:
+  - Het bronbestand hoeft geen ICO te zijn: `icon.png` (≥256×256) laat
+    app-builder zelf een `.ico` genereren in `release/.icon-ico/`. Eén
+    bronbestand in de repo, geen tweede binair icoon erbij en geen nieuwe
+    dependency — in lijn met `scripts/make-tray-icon.js`.
+  - `author: Studio Bo` in `package.json` vult meteen `CompanyName`/copyright
+    in de exe-metadata (rcedit), dus dat was functioneel en niet alleen
+    cosmetisch.
+- Actions:
+  - `assets/icon.ico` → `assets/icon.png` (inhoud onveranderd);
+    `package.json`: `author` + `build.win.icon: assets/icon.png`.
+  - Validatie: build naar een tijdelijke output-dir → géén
+    `default Electron icon is used`-waarschuwing meer; icoon uit `Chronicle.exe`
+    én uit de installer getrokken met `[System.Drawing.Icon]::ExtractAssociatedIcon`
+    en visueel gecontroleerd (donker embleem, transparante hoek).
+  - Open: `assets/build.win.ico` is een duplicaat van `assets/icon.png` (nog
+    untracked) en wordt wél meegepakt in `app.asar`; weggooien scheelt ~1,2 MB.
+    De gegenereerde ico heeft één entry (256×256); 16/32 px worden door Windows
+    geschaald — een multi-res ico zou de taakbalk scherper maken.
+  - `release/` is nog niet ververst: OpenChamber (pid 28712) houdt een handle op
+    de oude `release/win-unpacked/resources/app.asar`, waardoor electron-builder
+    stopt met `remove … Het proces heeft geen toegang tot het bestand`. Venster
+    sluiten of herstarten en daarna `npx vite build && npm run build`.
