@@ -763,3 +763,39 @@
     een Foundation-URL/token in de gepackte app kun je `foundation.local.json`
     in `%APPDATA%\chronicle-ai-archive\` zetten (staat in de zoeklijst van
     `loadFoundationConfigFile`).
+
+## 2026-10-12 (userData naar Local op Windows)
+
+- Findings: Electron zet `userData` standaard in `%APPDATA%` (Roaming). Daar
+  stond bij Chronicle vrijwel alleen wegwerp-Chromium-cache: 6,3 MB `Cache`,
+  1,6 MB `GPUCache` en 1,1 MB Dawn-caches tegen 16 KB `Local Storage` en 80 KB
+  `source-blobs`. De Electron-docs waarschuwen juist dat `userData` in sommige
+  omgevingen naar cloudopslag wordt geback-upt en dat er geen grote bestanden in
+  horen; Roaming is ook het profiel dat in een domeinomgeving meeroamt. Niets
+  van wat Chronicle daar bewaart (caches, blob-mirror, localStorage-kopie van
+  het archief) is profielgebonden.
+- Conclusions:
+  - Op Windows hoort `userData` in `%LOCALAPPDATA%`, gezet met `app.setPath`
+    vóór de ready-fase: alle latere `app.getPath('userData')`-aanroepen
+    (`foundation.local.json`, `source-blobs`) resolven daarna automatisch daar.
+  - De mapnaam wordt uit de bestaande `userData` gehaald (`path.basename`) in
+    plaats van uit `app.getName()`, zodat een latere `productName`-wijziging de
+    map niet stil verplaatst.
+  - Verhuizing is één `rename` (zelfde volume, dus verplaatsen en niet kopiëren)
+    met `cpSync` als terugval; in die terugval blijft de oude map staan, zodat er
+    nooit data verdwijnt als het verplaatsen halverwege faalt.
+  - Daarna `mkdirSync`, want `app.setPath` weigert een pad dat nog niet bestaat
+    (het maakt de map zelf niet aan) — bij een verse installatie is de
+    Local-map er immers nog niet.
+  - macOS en Linux blijven onaangeroerd: daar is het standaardpad al lokaal.
+- Actions:
+  - `electron-main.js`: `useLocalUserData()` direct na de `require`s en vóór
+    alles wat `userData` leest.
+  - Validatie: `node --check` ok; gepackte build gestart → stdout
+    `[Chronicle] userData moved to C:\Users\bojan\AppData\Local\chronicle-ai-archive`,
+    daarna `PostgreSQL Schema verified` en de ingest listener op 4580. Na
+    afloop: Local-map met 70 bestanden (8 blobs, gelijk aan ervoor) en
+    `%APPDATA%\chronicle-ai-archive` verdwenen.
+  - Open: `foundation.local.json` hoort nu in
+    `%LOCALAPPDATA%\chronicle-ai-archive\` (die regel hierboven is daarmee
+    achterhaald); `CHRONICLE_BLOBS_DIR` blijft als override werken.

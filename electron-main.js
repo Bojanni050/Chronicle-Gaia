@@ -6,6 +6,38 @@ const fs = require('fs');
 const { Pool } = require('pg');
 const { parse: parseConnectionString } = require('pg-connection-string');
 
+// ── User data location ───────────────────────────────────────────────────────
+// Electron's default userData is %APPDATA% (Roaming) on Windows, the profile
+// that gets synced or cloud-backed-up. Everything Chronicle keeps there is
+// machine-local: Chromium's caches, the source-blob mirror and the localStorage
+// copy of the archive. So on Windows it moves to %LOCALAPPDATA%; on macOS and
+// Linux the default already is a local path. This must run before the app is
+// ready (and before anything reads userData), because app.setPath overrides the
+// path service every later app.getPath('userData') resolves against.
+function useLocalUserData() {
+  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return;
+  const roamingDir = app.getPath('userData');
+  const localDir = path.join(process.env.LOCALAPPDATA, path.basename(roamingDir));
+  if (path.resolve(localDir) === path.resolve(roamingDir)) return;
+  try {
+    if (!fs.existsSync(localDir) && fs.existsSync(roamingDir)) {
+      try {
+        fs.renameSync(roamingDir, localDir); // same volume, so a move and not a copy
+        console.log(`[Chronicle] userData moved to ${localDir}`);
+      } catch (e) {
+        fs.cpSync(roamingDir, localDir, { recursive: true });
+        console.log(`[Chronicle] userData copied to ${localDir} (${e.code}); old folder left in place`);
+      }
+    }
+    // setPath refuses a path that does not exist yet (it never creates it).
+    fs.mkdirSync(localDir, { recursive: true });
+    app.setPath('userData', localDir);
+  } catch (e) {
+    console.warn(`[Chronicle] keeping userData in ${roamingDir}: ${e.message}`);
+  }
+}
+useLocalUserData();
+
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive';
 
 // Initialize PostgreSQL Pool
