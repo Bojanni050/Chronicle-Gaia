@@ -730,3 +730,36 @@
     de oude `release/win-unpacked/resources/app.asar`, waardoor electron-builder
     stopt met `remove … Het proces heeft geen toegang tot het bestand`. Venster
     sluiten of herstarten en daarna `npx vite build && npm run build`.
+
+## 2026-10-12 (Main-process-modules ontbraken in de installer)
+
+- Findings: de geïnstalleerde app (`%LOCALAPPDATA%\Programs\chronicle-ai-archive`)
+  crasht direct met een dialoog: `Uncaught Exception: Error: Cannot find module
+  './services/ingest-listener'`. Oorzaak: `build.files` bevatte alleen
+  `index.html`, `dist/**`, `electron-main.js`, `electron-preload.js`,
+  `.env.local` en `assets/**`, terwijl `electron-main.js` bij het opstarten
+  `./services/ingest-listener` en `./utils/*.cjs` requiret. De oude asar had dan
+  ook nul entries onder `services/` en geen enkel project-`.cjs` — de eerdere
+  verificatie keek alleen of `.env.local` meeging en miste dit.
+- Conclusions:
+  - De renderer is één Vite-bundle, maar de main process laadt zijn eigen
+    modules lazy met `require`, dus alles wat daar aangeroepen wordt hoort
+    expliciet in `files`.
+  - `utils/*.cjs` (en niet `utils/**/*`): alleen de door esbuild gegenereerde
+    CommonJS-bestanden zijn runtime nodig, de TypeScript-bron hoeft niet mee.
+    `services/geminiService.ts` blijft dus buiten de build — die is renderer-zijde
+    en zit al in de bundle.
+  - Zo'n fout is alleen in een gepackte app te zien, niet in dev: daar wijzen de
+    paden naar de repo.
+- Actions:
+  - `package.json` → `build.files`: `services/ingest-listener.js` en
+    `utils/*.cjs` toegevoegd.
+  - Validatie: asar bevat nu `\services\ingest-listener.js`,
+    `\utils\captureIngest.cjs`, `\utils\claudeExportZip.cjs`,
+    `\utils\sourceParsers.cjs`; de build uit een tijdelijke output-dir gestart en
+    die kwam schoon op (`[Chronicle] PostgreSQL Schema verified.` +
+    `Ingest listener on http://127.0.0.1:4580`), daarna afgesloten.
+  - Open: de bestaande installatie moet opnieuw geïnstalleerd worden; en voor
+    een Foundation-URL/token in de gepackte app kun je `foundation.local.json`
+    in `%APPDATA%\chronicle-ai-archive\` zetten (staat in de zoeklijst van
+    `loadFoundationConfigFile`).

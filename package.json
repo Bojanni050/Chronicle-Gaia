@@ -48,6 +48,8 @@
       "dist/**/*",
       "electron-main.js",
       "electron-preload.js",
+      "services/ingest-listener.js",
+      "utils/*.cjs",
       ".env.local",
       "assets/**/*"
     ],
