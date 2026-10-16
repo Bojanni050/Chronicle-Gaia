@@ -856,3 +856,8 @@
   - Open: niet getest in een echte provider-tab met de extensie geladen; de
     provider-scripts zijn ongemoeid, dus die controle is een `chrome://extensions`
     → herladen → één gesprek openen.
+## 2026-10-16 (build-and-start.cmd + start.cmd)
+
+- Findings: Chronicle-Gaia is een Electron/Vite-app (geen Tauri); `npm start` doet al `vite build && electron .`, terwijl `npm run build` een volledige electron-builder-installer maakt (te zwaar voor even herstarten).
+- Conclusions: `build-and-start.cmd` gebruikt `npm start`; `start.cmd` start alleen Electron op de bestaande `dist`, met melding als die ontbreekt.
+- Actions: `build-and-start.cmd` en `start.cmd` (nieuw); validated: niet uitgevoerd.
