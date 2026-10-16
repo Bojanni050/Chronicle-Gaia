@@ -25,8 +25,29 @@ plugin (content script)  →  service worker (token + retry-queue)
    kies de map `plugin/` uit deze repo.
 4. Open de opties van de extensie: zet de listener-URL
    (standaard `http://127.0.0.1:4580`) en het token.
-5. Ga naar een gesprek op claude.ai of chatgpt.com en klik rechtsonder
-   op **→ Chronicle** (zwevende knop rechtsonder; de bulk-knop ⇊ staat er direct boven).
+5. Ga naar een gesprek op claude.ai of chatgpt.com en klik op **→ Chronicle**
+   (de knop staat standaard rechtsonder en is naar elke hoek te verhuizen; de
+   bulk-knop ⇊ staat er direct boven — zie "Meldingen en positie").
+   De hoek is instelbaar — zie "Meldingen en positie".
+
+## Meldingen en positie
+
+De plugin-UI (beide knoppen + hun statusfeedback) hangt in één container
+`#chronicle-ui` die **standaard rechtsonder** staat; dat gedrag is ongewijzigd
+sinds v0.3.0. In de opties staat nu:
+
+- **Waar staan de meldingen van de plugin?** — rechtsonder (standaard),
+  linksonder, rechtsboven of linksboven. De knoppen krijgen in elke hoek
+  dezelfde onderlinge volgorde (bulk boven, export onderaan in de hoek).
+- **Meldingen standaard ingeklapt tonen** — de container start dan als één
+  klein knopje (**Chronicle**); klikken klapt de knoppen weer uit.
+
+Beide keuzes leven in `chrome.storage.local` (`uiCorner`, `uiCollapsed`) en de
+content scripts luisteren via `chrome.storage.onChanged`, dus **een wijziging
+werkt direct door op al open gesprekstabs** — geen herladen nodig. De
+inklep-toggle in de UI zelf (`#chronicle-ui-toggle`, `⌄`) schrijft dezelfde
+sleutel weg, zodat de keuze ook na een herstart blijft staan. De toolbar-knop
+blijft werken ongeacht hoek of ingeklapte staat.
 
 ## Automatische capture (fase 3)
 
@@ -113,9 +134,11 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
 - `content/mistral.js` — Le Chat leest via tRPC (`chat.byId` voor de titel,
   `message.all` voor de berichten met `role` + `contentChunks`) en het seint op
   `POST /api/chat`. Alleen huidig gesprek + auto-capture; DOM-fallback erachter.
-- `content/normalize.js` — gedeelde knop + statusfeedback + de
+- `content/normalize.js` — gedeelde UI: de knoppen in één inklapbare container
+  (`#chronicle-ui`) die in de gekozen hoek staat, plus statusfeedback en de
   ParsedConversation-whitelist.
-- `options/` — listener-URL + token (`chrome.storage.local`).
+- `options/` — listener-URL + token + de meldingenvoorkeuren
+  (`uiCorner`, `uiCollapsed`), allemaal in `chrome.storage.local`.
 - **Toolbar-knop** — het extensie-icoon in de werkbalk triggert dezelfde export
   op het actieve tab (handig als de zwevende knop door site-CSS wordt bedekt).
 

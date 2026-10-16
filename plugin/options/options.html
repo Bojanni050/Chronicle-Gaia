@@ -5,8 +5,15 @@
   <title>Chronicle Chat Exporter — instellingen</title>
   <style>
     body { font: 14px system-ui, sans-serif; color: #1c1917; background: #fefef9; margin: 40px; }
+    body { max-width: 620px; }
+    p { line-height: 1.5; }
+    h2 { margin: 32px 0 0; font-size: 1.05rem; }
     label { display: block; margin: 16px 0 4px; font-weight: 600; }
     input { width: 100%; max-width: 420px; padding: 8px; border: 1px solid rgba(0,0,0,0.2); border-radius: 6px; box-sizing: border-box; }
+    select { width: 100%; max-width: 420px; padding: 8px; border: 1px solid rgba(0,0,0,0.2); border-radius: 6px; box-sizing: border-box; background: #fff; font: inherit; }
+    label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+    label.check input[type="checkbox"] { width: auto; max-width: none; }
+    .hint { color: rgba(28,25,23,0.7); font-size: 13px; }
     button { margin-top: 20px; padding: 8px 16px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.15); background: #1c1917; color: #fefef9; cursor: pointer; }
     .status { margin-top: 12px; min-height: 1em; }
     code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; }
@@ -30,6 +37,24 @@
     eigen ingest-token — de gedeelde Foundation-token. Het token blijft in
     <code>chrome.storage.local</code> van de service worker; de provider-scripts
     zien het nooit.
+  </p>
+  <h2>Meldingen</h2>
+  <label for="uiCorner">Waar staan de meldingen van de plugin?</label>
+  <select id="uiCorner">
+    <option value="bottom-right">Rechtsonder (standaard)</option>
+    <option value="bottom-left">Linksonder</option>
+    <option value="top-right">Rechtsboven</option>
+    <option value="top-left">Linksboven</option>
+  </select>
+  <label class="check" for="uiCollapsed">
+    <input type="checkbox" id="uiCollapsed">
+    Meldingen standaard ingeklapt tonen
+  </label>
+  <p class="hint">
+    De knoppen en hun statusmeldingen verhuizen naar de gekozen hoek. Ingeklapt
+    blijft er één knopje (<strong>Chronicle</strong>) over; klik daarop om weer
+    uit te klappen. Een wijziging werkt direct door op al open gesprekstabs —
+    herladen is niet nodig.
   </p>
   <button id="save">Opslaan</button>
   <div class="status" id="status"></div>

@@ -1,6 +1,8 @@
 /**
  * Gedeelde UI-hulp voor de provider-scripts: de "→ Chronicle"-knop met
- * statusfeedback (✓ nieuw / ✓ bijgewerkt / duplicate / wachtrij / mislukt).
+ * statusfeedback (✓ nieuw / ✓ bijgewerkt / duplicate / wachtrij / mislukt),
+ * in een inklapbare container die in een instelbare hoek staat
+ * (chrome.storage.local: `uiCorner`, `uiCollapsed`).
  *
  * Geen ES-modules: MV3 content scripts worden als gewone scripts geïnjecteerd,
  * dus deze helper hangt zijn functies aan window.__chronicleUI. Alles zit in
@@ -18,6 +20,130 @@
     queued: '⏳ In wachtrij',
   };
 
+  /**
+   * Positie + inklappen van de plugin-UI.
+   *
+   * Alle knoppen hangen in één fixed container (#chronicle-ui) die in de
+   * gekozen hoek staat; de knoppen zelf zijn niet meer gepositioneerd. De
+   * voorkeuren leven in chrome.storage.local (`uiCorner`, `uiCollapsed`) en
+   * werken direct door op open tabs via chrome.storage.onChanged — een
+   * wijziging op de optiepagina vraagt dus geen herlaad van de gesprekstabs.
+   *
+   * Standaardgedrag blijft ongewijzigd: rechtsonder, uitgeklapt.
+   */
+  const UI_CORNERS = {
+    'bottom-right': { vertical: 'bottom', horizontal: 'right' },
+    'bottom-left': { vertical: 'bottom', horizontal: 'left' },
+    'top-right': { vertical: 'top', horizontal: 'right' },
+    'top-left': { vertical: 'top', horizontal: 'left' },
+  };
+  const DEFAULT_CORNER = 'bottom-right';
+
+  const uiState = { corner: DEFAULT_CORNER, collapsed: false };
+  const uiButtons = { export: null, bulk: null };
+  let uiPanel = null;
+  let uiToggle = null;
+
+  const BUTTON_STYLE = {
+    padding: '8px 14px',
+    borderRadius: '8px',
+    border: '1px solid rgba(0,0,0,0.15)',
+    background: '#fefef9',
+    color: '#1c1917',
+    font: '13px system-ui, sans-serif',
+    cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+  };
+
+  /** Maakt de container met de knoppen + de inklap-toggle (idempotent). */
+  function ensurePanel() {
+    if (uiPanel && uiPanel.isConnected) return uiPanel;
+    uiPanel = document.createElement('div');
+    uiPanel.id = 'chronicle-ui';
+
+    uiToggle = document.createElement('button');
+    uiToggle.id = 'chronicle-ui-toggle';
+    Object.assign(uiToggle.style, BUTTON_STYLE, {
+      padding: '4px 10px',
+      lineHeight: '1',
+      fontSize: '12px',
+      opacity: '0.85',
+    });
+    uiToggle.addEventListener('click', () => setCollapsed(!uiState.collapsed, true));
+
+    uiPanel.appendChild(uiToggle);
+    (document.body || document.documentElement).appendChild(uiPanel);
+    layoutPanel();
+    return uiPanel;
+  }
+
+  /** Zet de container in de gekozen hoek en verbergt de knoppen als er is ingeklapt. */
+  function layoutPanel() {
+    if (!uiPanel) return;
+    const corner = UI_CORNERS[uiState.corner] || UI_CORNERS[DEFAULT_CORNER];
+    Object.assign(uiPanel.style, {
+      position: 'fixed',
+      top: corner.vertical === 'top' ? '20px' : '',
+      bottom: corner.vertical === 'bottom' ? '20px' : '',
+      left: corner.horizontal === 'left' ? '20px' : '',
+      right: corner.horizontal === 'right' ? '20px' : '',
+      zIndex: '9999',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      alignItems: corner.horizontal === 'left' ? 'flex-start' : 'flex-end',
+    });
+    for (const button of [uiButtons.bulk, uiButtons.export]) {
+      if (button) button.style.display = uiState.collapsed ? 'none' : '';
+    }
+    if (uiToggle) {
+      uiToggle.textContent = uiState.collapsed ? 'Chronicle' : '⌄';
+      uiToggle.title = uiState.collapsed
+        ? 'Chronicle — klik om de meldingen uit te klappen'
+        : 'Chronicle-meldingen inklappen';
+    }
+  }
+
+  /** In-/uitklappen; `persist` schrijft de keuze terug naar chrome.storage.local. */
+  function setCollapsed(collapsed, persist) {
+    uiState.collapsed = !!collapsed;
+    if (persist) {
+      try {
+        chrome.storage.local.set({ uiCollapsed: uiState.collapsed });
+      } catch (err) {
+        // Geen storage beschikbaar: de keuze geldt dan alleen deze pagina.
+      }
+    }
+    layoutPanel();
+  }
+
+  function applyStoredPreferences(data) {
+    if (data && UI_CORNERS[data.uiCorner]) uiState.corner = data.uiCorner;
+    if (data) uiState.collapsed = !!data.uiCollapsed;
+    layoutPanel();
+  }
+
+  function loadUiPreferences() {
+    try {
+      chrome.storage.local.get(['uiCorner', 'uiCollapsed'], (data) => {
+        if (chrome.runtime.lastError) return;
+        applyStoredPreferences(data);
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes.uiCorner) {
+          uiState.corner = UI_CORNERS[changes.uiCorner.newValue]
+            ? changes.uiCorner.newValue
+            : DEFAULT_CORNER;
+        }
+        if (changes.uiCollapsed) uiState.collapsed = !!changes.uiCollapsed.newValue;
+        layoutPanel();
+      });
+    } catch (err) {
+      // Zonder storage blijft de standaardhoek rechtsonder, uitgeklapt.
+    }
+  }
+
   function setButtonState(button, state, title) {
     button.textContent = CHRONICLE_STATUS[state] || CHRONICLE_STATUS.idle;
     button.title = title || '';
@@ -32,23 +158,13 @@
     }
     const button = document.createElement('button');
     button.id = 'chronicle-export-button';
-    Object.assign(button.style, {
-      position: 'fixed',
-      bottom: '20px',
-      right: '20px',
-      zIndex: '9999',
-      padding: '8px 14px',
-      borderRadius: '8px',
-      border: '1px solid rgba(0,0,0,0.15)',
-      background: '#fefef9',
-      color: '#1c1917',
-      font: '13px system-ui, sans-serif',
-      cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-    });
+    Object.assign(button.style, BUTTON_STYLE);
     setButtonState(button, 'idle');
     button.addEventListener('click', onClick);
-    document.documentElement.appendChild(button);
+    const panel = ensurePanel();
+    panel.insertBefore(button, uiToggle); // de toggle blijft het laatste element (de hoek)
+    uiButtons.export = button;
+    layoutPanel();
     return button;
   }
 
@@ -162,23 +278,13 @@
     if (existing) existing.remove();
     const button = document.createElement('button');
     button.id = 'chronicle-bulk-button';
-    Object.assign(button.style, {
-      position: 'fixed',
-      bottom: '56px',
-      right: '20px',
-      zIndex: '9999',
-      padding: '8px 14px',
-      borderRadius: '8px',
-      border: '1px solid rgba(0,0,0,0.15)',
-      background: '#fefef9',
-      color: '#1c1917',
-      font: '13px system-ui, sans-serif',
-      cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-    });
+    Object.assign(button.style, BUTTON_STYLE);
     button.textContent = '⇊ Alles naar Chronicle';
     button.addEventListener('click', onClick);
-    document.documentElement.appendChild(button);
+    const panel = ensurePanel();
+    panel.insertBefore(button, uiToggle); // de toggle blijft het laatste element (de hoek)
+    uiButtons.bulk = button;
+    layoutPanel();
     return button;
   }
 
@@ -238,6 +344,8 @@
     toEpochMs,
     transcriptFromTurns,
     innerTextWithCodeFences,
+    setCollapsed,
   };
+  loadUiPreferences();
   console.info('[Chronicle] content helper geinjecteerd op', location.host);
 })();

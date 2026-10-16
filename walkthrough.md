@@ -799,3 +799,60 @@
   - Open: `foundation.local.json` hoort nu in
     `%LOCALAPPDATA%\chronicle-ai-archive\` (die regel hierboven is daarmee
     achterhaald); `CHRONICLE_BLOBS_DIR` blijft als override werken.
+
+## 2026-10-16 (Browserplugin: meldingen verplaatsbaar + inklapbaar)
+
+- Findings: de hele plugin-UI bestond uit twee los gepositioneerde knoppen,
+  allebei hardcoded rechtsonder (`normalize.js`: export op `bottom:20px;
+  right:20px`, bulk op `bottom:56px; right:20px`). Wie daar last van had kon
+  niets verplaatsen, en er was geen manier om de knoppen weg te leggen. Bo vroeg
+  (a) een optie voor de plek waar de plugin-meldingen staan en (b) een optie om
+  ze in te klappen.
+- Conclusions:
+  - Eén container `#chronicle-ui` (fixed, `flex-direction: column`) met de
+    knoppen erin, in plaats van twee onafhankelijk gepositioneerde knoppen: nu
+    is er precies één plek die de hoek kent, en "ingeklapt" is niets meer dan
+    de kinderen verbergen — de toggle blijft dan als handvat staan.
+  - De knoppen zelf krijgen geen `position/offset` meer; dat verhuist naar de
+    container. De inline look (kleuren, font, schaduw, `zIndex: 9999`) is
+    gelijkgetrokken in één `BUTTON_STYLE`, zodat de twee knoppen niet meer
+    uiteen kunnen lopen.
+  - Voorkeuren naast `baseUrl`/`token` in `chrome.storage.local`
+    (`uiCorner`, `uiCollapsed`) en na het injecteren live toegepast via
+    `chrome.storage.onChanged`: de optiepagina hoeft geen gesprekstab te
+    herladen — dat was de belangrijkste eis, want herladen betekent een nieuw
+    gesprek en dus verlies van de auto-capture-baseline.
+  - Standaardhoek rechtsonder + uitgeklapt is bewust exact het oude gedrag; een
+    onbekende/ontbrekende `uiCorner` valt op dezelfde waarde terug.
+  - De toggle staat op de hoek zelf (`insertBefore(button, toggle)`, toggle als
+    laatste kind) zodat een ingeklapte plugin precies staat waar de knoppen
+    stonden. Hij schrijft dezelfde `uiCollapsed`-sleutel weg, dus de keuze
+    overleeft een herstart.
+  - Geen nieuwe permissie nodig: `storage` zat al in het manifest.
+- Actions:
+  - `plugin/content/normalize.js`: `UI_CORNERS`/`DEFAULT_CORNER`, `uiState`,
+    `ensurePanel()` (container + toggle), `layoutPanel()` (hoek + inklappen),
+    `setCollapsed()`, `applyStoredPreferences()`, `loadUiPreferences()`
+    (storage-get + onChanged-listener); `makeButton`/`makeBulkButton` appendden
+    nu in de container; `setCollapsed` staat op `window.__chronicleUI`.
+  - `plugin/options/options.html` + `options.js`: keuzelijst "Waar staan de
+    meldingen van de plugin?" (4 hoeken) en checkbox "Meldingen standaard
+    ingeklapt tonen"; beide laden/opslaan met de bestaande Opslaan-knop.
+  - `plugin/manifest.json`: versie 0.3.0 → 0.4.0.
+  - `plugin/README.md`: stap 5 gecorrigeerd + nieuwe sectie "Meldingen en
+    positie"; `options/`-regel in "Bouwvorm" bijgewerkt.
+  - Validatie: `node --check` op `normalize.js`/`options.js` ok, manifest-JSON
+    parseert. Daarna een tijdelijke harness (`plugin/__ui-harness.local.html`,
+    daarna verwijderd) die `chrome.storage` stubt, `normalize.js` laadt en de
+    knoppen aanmaakt; via een statisch Node-servertje op 127.0.0.1 en Playwright
+    op 1280x800 gemeten: default rechtsonder (panel `right: 1260`,
+    `bottom: 780` = viewport − 20), `top-left` → `left/top: 20`,
+    onzin-waarde valt terug op rechtsonder, inklappen via het handvat verbergt
+    beide knoppen (`display: none`) en schrijft `{uiCollapsed:true}`
+    respectievelijk `{uiCollapsed:false}` bij uitklappen, en een
+    storage-wijziging naar `bottom-left` + ingeklapt herpositioneert de
+    container live naar `left: 20, bottom: 780`. Geen console-fouten
+    (alleen een favicon-404 van de harness-server).
+  - Open: niet getest in een echte provider-tab met de extensie geladen; de
+    provider-scripts zijn ongemoeid, dus die controle is een `chrome://extensions`
+    → herladen → één gesprek openen.

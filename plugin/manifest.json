@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chronicle Chat Exporter",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Exporteert het huidige claude.ai / chatgpt.com / gemini.google.com / chat.mistral.ai gesprek naar Chronicle (Chronicle-Gaia), dat de archiefkopie bewaart en automatisch naar Foundation's Ingestie Gateway forwardt.",
   "permissions": [
     "storage",
