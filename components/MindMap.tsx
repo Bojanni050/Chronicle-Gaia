@@ -33,8 +33,8 @@ const SOURCE_COLORS: Record<string, string> = {
   [SourceType.MISTRAL]: '#f59e0b', // amber-500
   [SourceType.QWEN]: '#6366f1',   // indigo-500 (Distinct color for Qwen)
   [SourceType.LOCAL]: '#a855f7', // purple-500
-  [SourceType.OTHER]: '#94a3b8', // slate-400
-  'Default': '#64748b'
+  [SourceType.OTHER]: '#a8a29e', // stone-400
+  'Default': '#78716c'
 };
 
 export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }) => {

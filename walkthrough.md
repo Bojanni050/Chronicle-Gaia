@@ -922,3 +922,9 @@
 - Findings: knoppen waren groot (`px-8 py-5`, `py-3/py-4`, zware schaduwen) en de afrondingen extreem (`rounded-[2.5rem]`, `rounded-2xl/3xl`).
 - Conclusions: de radius-schaal is centraal verlaagd in de Tailwind-config (xl 0.375rem, 2xl 0.5rem, 3xl 0.625rem; `full` blijft voor pills/cirkels), arbitrary waarden zijn `rounded-xl` geworden, en knoppen zijn compacter met lichtere schaduwen.
 - Actions: `index.html` (borderRadius), `App.tsx` en `components/*.tsx` (knop-padding, schaduw, arbitrary radii, dashboard-knoppen); validated: `vite build` ✓, 95 tests groen. Niet visueel gecontroleerd.
+
+## 2026-10-18 (blauwe tinten vervangen door natuurlijke tinten)
+
+- Findings: de blauwachtige dark-mode (dashboard, kaarten, knoppen) kwam van de Tailwind `slate`-klassen (koud blauwgrijs), plus enkele `blue-*`-accenten.
+- Conclusions: in plaats van tientallen klassen te herschrijven is de `slate`-schaal in de Tailwind-config vervangen door de warme `stone`-waarden, en `blue` door een sage-groene schaal; zo blijft alle bestaande markup werken en past de kleur bij de rest van het palet. De bronkleuren in de Neural Map (Gemini blauw e.d.) zijn bewust gelaten als herkenning, alleen de twee grijsblauwe zijn warm gemaakt.
+- Actions: `index.html` (colors.slate, colors.blue), `components/MindMap.tsx` (2 hex-waarden); validated: geen testwijzigingen nodig. Niet visueel gecontroleerd.
