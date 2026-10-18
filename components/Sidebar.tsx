@@ -49,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   const MIN_WIDTH = 240;
-  const DEFAULT_WIDTH = 560;
+  const DEFAULT_WIDTH = 380;
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const asideRef = useRef<HTMLElement>(null);
   const isResizing = useRef(false);
@@ -171,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       ref={asideRef}
       style={{ width: `${width}px` }}
-      className="max-w-[50vw] border-r border-sandstone dark:border-stone-800 bg-[#F2F1EC] dark:bg-stone-900/50 flex flex-col shrink-0 font-sans relative transition-colors"
+      className="max-w-[50vw] flex flex-col shrink-0 font-sans relative transition-colors"
     >
 
       {/* Resize handle */}
@@ -184,7 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
       
       {/* Top Search & Filter Header */}
-      <div className="p-4 space-y-4 border-b border-sandstone/40 bg-white dark:bg-stone-900 z-10 shadow-sm">
+      <div className="px-2 pb-3 pt-1 space-y-3 z-10">
         
         <div className="flex gap-2">
             <div className="relative flex-1">
@@ -194,14 +194,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <input 
                   type="text"
                   placeholder="Filter memories..."
-                  className="w-full bg-slate-50 dark:bg-stone-800 border border-sandstone/30 dark:border-stone-700 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-sage-green transition-all text-earth-dark dark:text-white placeholder:text-moss-brown/60"
+                  className="w-full bg-paper dark:bg-stone-800 border border-sandstone dark:border-stone-700 rounded-xl py-2.5 pl-9 pr-3 text-sm font-medium focus:outline-none focus:border-sage-green transition-all text-earth-dark dark:text-white placeholder:text-moss-brown/60"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
             </div>
             <button 
                 onClick={() => setShowQuickFilters(!showQuickFilters)}
-                className={`p-2 rounded-xl border transition-all ${showQuickFilters ? 'bg-sage-green border-sage-green text-white shadow-md' : 'bg-white dark:bg-stone-800 border-sandstone/30 text-moss-brown hover:border-sage-green'}`}
+                className={`px-3 rounded-xl border transition-all ${showQuickFilters ? 'bg-sage-green border-sage-green text-white shadow-md' : 'bg-paper dark:bg-stone-800 border-sandstone text-moss-brown hover:border-sage-green'}`}
                 title="Quick Filters"
             >
                 <FilterIcon className="w-4 h-4" />
@@ -283,10 +283,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <button
                             key={tag}
                             onClick={() => onTagToggle(tag)}
-                            className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-all border ${
+                            className={`text-[11px] font-semibold px-3 py-1 rounded-full whitespace-nowrap transition-all border ${
                                 isActive
-                                ? 'bg-terracotta border-terracotta text-white shadow-sm'
-                                : 'bg-white dark:bg-stone-800 border-sandstone/20 text-moss-brown hover:border-terracotta/40'
+                                ? 'bg-terracotta border-terracotta text-white'
+                                : 'bg-tag-bg dark:bg-stone-800 border-transparent text-moss-brown hover:border-terracotta/40'
                             }`}
                         >
                             {tag}
@@ -299,7 +299,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Enhanced Active Filter Chips Section */}
       {hasActiveFilters && (
-          <div className="px-4 py-3 bg-[#f3efe8] dark:bg-stone-900 border-b border-sandstone/30 shadow-inner animate-in fade-in slide-in-from-top-1 duration-300">
+          <div className="mx-2 mb-2 px-3 py-2.5 bg-sandstone/40 dark:bg-stone-900 rounded-xl animate-in fade-in slide-in-from-top-1 duration-300">
               <div className="flex items-center justify-between mb-2 px-1">
                 <span className="text-[9px] font-black text-moss-brown uppercase tracking-widest flex items-center gap-1.5">
                    <FilterIcon className="w-2.5 h-2.5" />
@@ -339,14 +339,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Result Meta */}
-      <div className="px-5 py-2.5 bg-paper dark:bg-stone-950 border-b border-sandstone/10 flex items-center justify-between">
-          <span className="text-[9px] font-black text-moss-brown uppercase tracking-[0.2em]">
-            {filteredChats.length} Memories Retained
+      <div className="px-3 pb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-moss-brown">
+            {filteredChats.length} {filteredChats.length === 1 ? 'note' : 'notes'} found
           </span>
       </div>
 
       {/* Entry List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-paper dark:bg-stone-950 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-1 pb-2 space-y-0.5 scrollbar-thin">
         {filteredChats.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-8 text-center opacity-40">
                 <div className="w-12 h-12 bg-sandstone/10 rounded-full flex items-center justify-center mb-4 text-sandstone">

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
-import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon } from './components/Icons';
+import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon, PencilIcon } from './components/Icons';
 import { UploadModal, SourceFileRef, AttachmentRef } from './components/UploadModal';
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
@@ -574,89 +574,95 @@ const App: React.FC = () => {
 
   const isMacOS = window.electronAPI?.platform === 'darwin';
 
+  const navItem = (active: boolean) =>
+    `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${active ? 'bg-sandstone/70 dark:bg-stone-800 text-earth-dark dark:text-white' : 'text-moss-brown dark:text-stone-400 hover:bg-hover-bg dark:hover:bg-stone-800/60'}`;
+  const panel = 'flex-1 flex overflow-hidden relative rounded-2xl bg-paper dark:bg-stone-900 border border-sandstone/60 dark:border-stone-800';
+
   return (
-    <div className={`flex flex-col h-screen bg-paper dark:bg-stone-950 text-earth-dark dark:text-stone-100 transition-colors duration-300 overflow-hidden ${isMacOS ? 'pt-4' : ''}`}>
-      
-      <header className={`h-16 shrink-0 bg-warm-beige dark:bg-stone-900/90 backdrop-blur-md border-b border-sandstone dark:border-stone-800 flex items-center justify-between px-6 z-50 ${isMacOS ? 'pl-20' : ''}`}>
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard', viewingChat: null }))}>
-          <div className="bg-[#394239] p-2 rounded-xl shadow-lg shadow-[#394239]/20 text-white">
-            <DatabaseIcon />
-          </div>
+    <div className={`flex h-screen bg-warm-beige dark:bg-stone-950 text-earth-dark dark:text-stone-100 transition-colors duration-300 overflow-hidden ${isMacOS ? 'pt-4' : ''}`}>
+
+      <nav className={`w-60 shrink-0 flex flex-col gap-4 px-3 pb-3 font-sans ${isMacOS ? 'pt-8' : 'pt-4'}`}>
+        <div className="flex items-center gap-3 px-2 cursor-pointer" onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard', viewingChat: null }))}>
+          <div className="bg-[#394239] p-2 rounded-xl text-white"><DatabaseIcon className="h-5 w-5" /></div>
           <div className="flex flex-col">
-            <h1 className="text-xl font-bold tracking-tight text-earth-dark dark:text-white font-sans leading-none">Chronicle</h1>
-            <p className="text-[10px] text-moss-brown dark:text-stone-500 font-medium uppercase tracking-widest">Archive & Synthesis</p>
+            <h1 className="text-lg font-bold tracking-tight text-earth-dark dark:text-white leading-none">Chronicle</h1>
+            <p className="text-[10px] text-moss-brown dark:text-stone-500 font-medium uppercase tracking-widest mt-1">Archive & Synthesis</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-            <button 
-                onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${state.viewMode === 'dashboard' ? 'bg-[#A9AB88] text-white shadow-sm' : 'hover:bg-sandstone/20 text-stone-600 dark:text-stone-400'}`}
-            >
-                <ChartIcon /> Insights
-            </button>
-            <button 
-                onClick={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${state.viewMode === 'archive' ? 'bg-[#A9AB88] text-white shadow-sm' : 'hover:bg-sandstone/20 text-stone-600 dark:text-stone-400'}`}
-            >
-                <DatabaseIcon /> Knowledge Base
-            </button>
-            <button 
-                onClick={() => setState(prev => ({ ...prev, viewMode: 'search' }))}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${state.viewMode === 'search' ? 'bg-[#A9AB88] text-white shadow-sm' : 'hover:bg-sandstone/20 text-stone-600 dark:text-stone-400'}`}
-            >
-                <SearchIcon className="w-4 h-4" /> Power Search
-            </button>
-            <div className="h-6 w-px bg-sandstone dark:bg-stone-800 mx-1"></div>
-            <button 
-                onClick={handleCreateNote}
-                className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm"
-            >
-                <ActivityIcon className="w-3.5 h-3.5" /> New Note
-            </button>
-            <button 
-                onClick={() => setState(prev => ({ ...prev, isUploading: true }))}
-                className="flex items-center gap-2 bg-[#394239] hover:bg-[#2C362C] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm"
-            >
-                <PlusIcon /> Import Log
-            </button>
-            <button 
-                onClick={() => setState(prev => ({ ...prev, isSettingsOpen: true }))}
-                className="p-2 text-stone-500 hover:text-earth-dark transition-colors"
-            >
-                <SettingsIcon />
-            </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreateNote}
+            className="flex-1 flex items-center justify-center gap-2 bg-[#394239] hover:bg-[#2C362C] text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+          >
+            <PencilIcon className="w-4 h-4" /> Note
+          </button>
+          <button
+            onClick={() => setState(prev => ({ ...prev, isUploading: true }))}
+            title="Import Log"
+            className="px-3 rounded-xl border border-sandstone dark:border-stone-700 bg-paper dark:bg-stone-800 text-moss-brown hover:text-earth-dark transition-colors"
+          >
+            <PlusIcon className="w-4 h-4" />
+          </button>
         </div>
-      </header>
 
-      <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex flex-col gap-0.5">
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))} className={navItem(state.viewMode === 'dashboard')}>
+            <ChartIcon className="w-4 h-4" /> Insights
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive' }))} className={navItem(state.viewMode === 'archive')}>
+            <DatabaseIcon className="w-4 h-4" /> Knowledge Base
+            <span className="ml-auto text-xs font-medium text-moss-brown/70">{state.chats.filter(c => !c.archived).length}</span>
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'search' }))} className={navItem(state.viewMode === 'search')}>
+            <SearchIcon className="w-4 h-4" /> Power Search
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'mindmap' }))} className={navItem(state.viewMode === 'mindmap')}>
+            <NetworkIcon className="w-4 h-4" /> Neural Map
+          </button>
+        </div>
+
+        <div className="mt-auto">
+          <button onClick={() => setState(prev => ({ ...prev, isSettingsOpen: true }))} className={navItem(false)}>
+            <SettingsIcon className="w-4 h-4" /> Settings
+          </button>
+        </div>
+      </nav>
+
+      <div className="flex-1 flex min-w-0 gap-2 py-2 pr-2">
         {state.viewMode === 'dashboard' ? (
-          <AnalyticsDashboard 
-            chats={state.chats}
-            onClose={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
-            onSelectChat={handleSelectChat}
-            onImport={() => setState(prev => ({ ...prev, isUploading: true }))}
-            onArchive={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
-            onNetwork={() => setState(prev => ({ ...prev, viewMode: 'mindmap' }))}
-            onTagClick={handleTagClick}
-            initialView="dashboard"
-          />
+          <div className={panel}>
+            <AnalyticsDashboard 
+              chats={state.chats}
+              onClose={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
+              onSelectChat={handleSelectChat}
+              onImport={() => setState(prev => ({ ...prev, isUploading: true }))}
+              onArchive={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
+              onNetwork={() => setState(prev => ({ ...prev, viewMode: 'mindmap' }))}
+              onTagClick={handleTagClick}
+              initialView="dashboard"
+            />
+          </div>
         ) : state.viewMode === 'mindmap' ? (
-          <AnalyticsDashboard 
-            chats={state.chats}
-            onClose={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))}
-            onSelectChat={handleSelectChat}
-            onTagClick={handleTagClick}
-            initialView="mindmap"
-          />
+          <div className={panel}>
+            <AnalyticsDashboard 
+              chats={state.chats}
+              onClose={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))}
+              onSelectChat={handleSelectChat}
+              onTagClick={handleTagClick}
+              initialView="mindmap"
+            />
+          </div>
         ) : state.viewMode === 'search' ? (
-          <AdvancedSearch 
-            chats={state.chats}
-            settings={state.settings}
-            onSelectChat={handleSelectChat}
-            onTagClick={handleTagClick}
-            onClose={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
-          />
+          <div className={panel}>
+            <AdvancedSearch 
+              chats={state.chats}
+              settings={state.settings}
+              onSelectChat={handleSelectChat}
+              onTagClick={handleTagClick}
+              onClose={() => setState(prev => ({ ...prev, viewMode: 'archive' }))}
+            />
+          </div>
         ) : (
           <>
             <Sidebar 
@@ -681,7 +687,7 @@ const App: React.FC = () => {
               onShowArchivedChange={(show) => setState(prev => ({ ...prev, showArchived: show }))}
             />
 
-            <main className="flex-1 bg-paper dark:bg-stone-950 relative overflow-hidden">
+            <main className="flex-1 min-w-0 bg-paper dark:bg-stone-900 border border-sandstone/60 dark:border-stone-800 rounded-2xl relative overflow-hidden">
               {state.viewingChat ? (
                 <ChatViewer 
                   chat={state.viewingChat} 

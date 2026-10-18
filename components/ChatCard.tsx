@@ -29,10 +29,10 @@ const SourceBadge: React.FC<{ source: string; type: ItemType }> = ({ source, typ
 
   return (
     <div className="flex items-center gap-1.5">
-      <div className={`p-1 rounded-md ${isNote ? 'bg-[#D27D66]/15 text-[#D27D66]' : 'bg-[#B2C9A1]/20 text-[#2C3E21]'}`}>
+      <div className={`p-1 rounded-md shrink-0 ${isNote ? 'bg-[#D27D66]/15 text-[#D27D66]' : 'bg-[#B2C9A1]/20 text-[#2C3E21]'}`}>
         {renderIcon()}
       </div>
-      <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${isNote ? 'bg-amber-50/50 border-amber-200/50 text-amber-700' : 'bg-sandstone/20 border-sandstone/40 text-earth-dark/70'} dark:bg-stone-800 dark:border-stone-600`}>
+      <span className="text-[10px] font-semibold text-moss-brown dark:text-stone-400">
         {source}
       </span>
     </div>
@@ -40,63 +40,47 @@ const SourceBadge: React.FC<{ source: string; type: ItemType }> = ({ source, typ
 };
 
 export const ChatCard: React.FC<ChatCardProps> = ({ chat, onClick, isActive, onTagClick, activeRelatedTags = [] }) => {
-  const dateStr = new Date(chat.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const dateStr = new Date(chat.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const isNote = chat.type === ItemType.NOTE;
 
   return (
-    <div 
+    <div
       onClick={onClick}
-      className={`relative p-5 rounded-2xl cursor-pointer transition-all duration-300 group overflow-hidden border-2 ${
-          isActive 
-            ? isNote 
-                ? 'bg-amber-50/40 border-amber-400 dark:bg-amber-900/20 dark:border-amber-700 shadow-lg' 
-                : 'bg-sage-green/10 border-sage-green dark:bg-sage-green/20 dark:border-sage-green shadow-lg'
-            : isNote 
-                ? 'bg-[#FFFDF5] border-dashed border-amber-300 dark:bg-stone-900 dark:border-amber-900/40 hover:bg-[#FFF9E0] shadow-sm' 
-                : 'bg-white border-solid border-sandstone/40 dark:bg-stone-900 dark:border-stone-800 hover:border-sage-green/50 shadow-sm'
+      className={`relative px-4 py-3.5 cursor-pointer transition-colors group border-b border-sandstone/60 dark:border-stone-800 last:border-b-0 ${
+        isActive
+          ? 'bg-paper dark:bg-stone-900 rounded-xl border-transparent ring-1 ring-sage-green shadow-sm'
+          : 'hover:bg-hover-bg/70 dark:hover:bg-stone-900/60 rounded-xl border-b-sandstone/60'
       }`}
     >
-      {/* Side Color Strip */}
-      <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors ${
-        isActive 
-          ? isNote ? 'bg-amber-500' : 'bg-sage-green' 
-          : isNote ? 'bg-amber-200' : 'bg-sandstone/30'
-      }`}></div>
+      <h3 className="text-sm font-bold line-clamp-1 leading-snug text-earth-dark dark:text-stone-100 font-sans">
+        {chat.title}
+      </h3>
 
-      <div className="flex justify-between items-start mb-2 pl-2">
-         <h3 className={`text-sm font-bold line-clamp-2 leading-tight ${isActive ? 'text-earth-dark dark:text-white' : 'text-earth-dark/90 dark:text-stone-200'} ${isNote ? 'font-serif italic' : 'font-sans'}`}>
-            {chat.title}
-         </h3>
-      </div>
-      
-      <div className="flex items-center justify-between mb-3 pl-2">
-         <SourceBadge source={chat.source} type={chat.type || ItemType.CHAT} />
-         <span className="text-[10px] text-moss-brown dark:text-stone-500 font-mono font-bold">{dateStr}</span>
-      </div>
-
-      <p className={`text-xs mb-4 line-clamp-2 pl-2 leading-relaxed ${isNote ? 'text-amber-800/80 dark:text-stone-400 font-serif italic' : 'text-earth-dark/70 dark:text-stone-400 font-sans'}`}>
+      <p className="text-xs mt-1 line-clamp-2 leading-relaxed text-moss-brown dark:text-stone-400">
         {chat.summary}
       </p>
-      
-      <div className="flex flex-wrap gap-1.5 pl-2">
-        {chat.tags.slice(0, 3).map(tag => {
-          const isFiltering = activeRelatedTags.includes(tag);
-          return (
-            <button 
-              key={tag} 
-              onClick={(e) => { e.stopPropagation(); onTagClick(tag); }}
-              className={`text-[9px] font-black px-2 py-0.5 rounded-md border transition-all uppercase tracking-wider ${
-                isFiltering 
-                  ? isNote ? 'bg-amber-600 text-white border-amber-600' : 'bg-sage-green text-white border-sage-green' 
-                  : isNote
-                    ? 'bg-amber-100/50 text-amber-700/70 border-amber-200/50 hover:bg-amber-200/50'
-                    : 'bg-sandstone/10 text-earth-dark/60 border-sandstone/20 hover:bg-sage-green/20'
-              }`}
-            >
-              {tag}
-            </button>
-          );
-        })}
+
+      <div className="flex items-center justify-between mt-2.5 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <SourceBadge source={chat.source} type={chat.type || ItemType.CHAT} />
+          {chat.tags.slice(0, 2).map(tag => {
+            const isFiltering = activeRelatedTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                onClick={(e) => { e.stopPropagation(); onTagClick(tag); }}
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors truncate ${
+                  isFiltering
+                    ? isNote ? 'bg-terracotta text-white' : 'bg-sage-green text-white'
+                    : 'bg-tag-bg dark:bg-stone-800 text-moss-brown hover:bg-sage-green/20'
+                }`}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+        <span className="text-[11px] text-moss-brown/80 dark:text-stone-500 shrink-0">{dateStr}</span>
       </div>
     </div>
   );

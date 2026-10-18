@@ -199,7 +199,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   const formattedDate = new Date(chat.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-paper dark:bg-stone-950 relative">
+    <div className="flex flex-col h-full overflow-hidden bg-paper dark:bg-stone-900 relative">
       {showArchiveConfirm && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-stone-950/80 backdrop-blur-md animate-in fade-in">
           <div className="max-w-md w-full bg-white dark:bg-stone-900 rounded-[2.5rem] p-10 border-2 border-sandstone/30 shadow-2xl text-center space-y-8 animate-in zoom-in">
@@ -216,7 +216,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
         </div>
       )}
 
-      <div className="px-8 py-6 border-b shrink-0 bg-white dark:bg-stone-900 border-sandstone dark:border-stone-800 z-10">
+      <div className="px-10 pt-6 pb-4 border-b shrink-0 bg-paper dark:bg-stone-900 border-sandstone/50 dark:border-stone-800 z-10">
         <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-4 min-h-[32px]">
                 <div>
@@ -236,7 +236,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                              {isNote ? <PencilIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
                          </div>
                          <div>
-                            <h1 className="text-5xl sm:text-6xl font-light text-earth-dark dark:text-white font-display tracking-tight leading-tight">{chat.title}</h1>
+                            <h1 className="text-3xl sm:text-4xl font-semibold text-earth-dark dark:text-white font-display tracking-tight leading-tight">{chat.title}</h1>
                             <div className="flex items-center gap-2 text-[10px] font-black text-moss-brown uppercase tracking-[0.2em] mt-1">
                                 <span>{isNote ? 'PERSONAL SYNTHESIS' : chat.source}</span>
                                 <span>•</span>

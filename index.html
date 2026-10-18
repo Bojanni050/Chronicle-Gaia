@@ -12,9 +12,9 @@
             theme: {
                 extend: {
                     fontSize: {
-                        'xs': '0.95rem',
-                        'sm': '1.2rem',
-                        'base': '1.1rem',
+                        'xs': '0.8rem',
+                        'sm': '0.9rem',
+                        'base': '1rem',
                     },
                     colors: {
                         'warm-beige': '#F2F1EC',
@@ -47,7 +47,7 @@
     <style>
         body {
             font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #FBFBF9; /* Paper */
+            background-color: #F2F1EC; /* Warm beige */
             color: #2E2D2A; /* Earth Dark */
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -91,7 +91,8 @@
         ::-webkit-scrollbar-thumb {
             background: #E6E5DF; /* Sandstone */
             border-radius: 6px;
-            border: 2px solid #FBFBF9;
+            border: 2px solid transparent;
+            background-clip: padding-box;
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #7A7871; /* Moss Brown */
