@@ -311,14 +311,14 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scroll-smooth">
         <ErrorBoundary>
           <div className="max-w-4xl mx-auto px-8 py-10 space-y-12">
-              <div className={`border-2 rounded-3xl p-8 relative shadow-sm ${isNote ? 'bg-amber-50/30 border-amber-200' : 'bg-slate-50/50 border-sandstone/30'}`}>
+              <div className={`border-2 rounded-3xl p-8 relative shadow-sm ${isNote ? 'bg-amber-50/30 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50' : 'bg-slate-50/50 border-sandstone/30 dark:bg-stone-800/50 dark:border-stone-700'}`}>
                   <div className={`absolute -top-3 left-8 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white shadow-md ${isNote ? 'bg-amber-500' : 'bg-sage-green'}`}>Abstract</div>
                   <div className="flex gap-4">
                       <div className="flex-1">
                           {isEditing ? (
                               <textarea className="w-full bg-white dark:bg-stone-800 border-2 border-sandstone/30 rounded-xl p-4 text-sm font-serif italic" value={editSummary} onChange={(e) => setEditSummary(e.target.value)} />
                           ) : (
-                              <p className="text-base leading-relaxed italic text-stone-700 dark:text-stone-400 font-serif">{chat.summary}</p>
+                              <p className="text-base leading-relaxed italic text-stone-700 dark:text-stone-200 font-serif">{chat.summary}</p>
                           )}
                       </div>
                   </div>
@@ -326,7 +326,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
               <div className="flex flex-wrap gap-2 px-2">
                   {(isEditing ? editTags : chat.tags).map(tag => (
-                      <button key={tag} onClick={() => !isEditing && onTagClick(tag)} className={`px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${activeRelatedTags.includes(tag) ? 'bg-terracotta border-terracotta text-white shadow-sm' : isNote ? 'bg-amber-100 border-amber-200 text-amber-700 hover:border-terracotta/50' : 'bg-sage-green/10 border-sage-green/20 text-sage-green hover:border-terracotta/50'}`}>
+                      <button key={tag} onClick={() => !isEditing && onTagClick(tag)} className={`px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${activeRelatedTags.includes(tag) ? 'bg-terracotta border-terracotta text-white shadow-sm' : isNote ? 'bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/30 dark:border-amber-800/60 dark:text-amber-300 hover:border-terracotta/50' : 'bg-sage-green/10 border-sage-green/20 text-sage-green dark:border-sage-green/40 dark:text-[#B2C9A1] hover:border-terracotta/50'}`}>
                           <TagIcon className="w-3 h-3" /> {tag}
                       </button>
                   ))}

@@ -904,3 +904,9 @@
 - Findings: de tags bovenaan een chat zijn klikbaar (ze openen het gerelateerde-tags-paneel), maar de actieve selectie was niet zichtbaar.
 - Conclusions: geselecteerde tags krijgen terracotta met witte tekst, zoals de tags in de lijst al deden; hover geeft een terracotta rand. `activeRelatedTags` werd al aan de viewer doorgegeven.
 - Actions: `components/ChatViewer.tsx` (tag-knop klasse); validated: 95 tests groen.
+
+## 2026-10-18 (abstract leesbaar in dark mode)
+
+- Findings: in dark mode stond de abstract-tekst (`text-stone-400`) op een lichtgrijze achtergrond (`bg-slate-50/50` zonder dark-variant) — onleesbaar. De tag-knoppen hadden ook geen dark-kleuren.
+- Conclusions: de kaart krijgt een donkere achtergrond en rand in dark mode, de tekst wordt lichter (`stone-200`); tags krijgen een lichtere sage/amber tint.
+- Actions: `components/ChatViewer.tsx` (abstract-kaart, samenvattingstekst, tag-knoppen); validated: 95 tests groen. Niet visueel gecontroleerd.
