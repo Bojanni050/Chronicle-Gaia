@@ -22,11 +22,14 @@
   "dependencies": {
     "@google/genai": "^1.38.0",
     "fflate": "^0.8.3",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "pg": "^8.18.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "sigma": "^3.0.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
