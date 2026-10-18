@@ -38,6 +38,22 @@ function useLocalUserData() {
 }
 useLocalUserData();
 
+// ── One instance per machine ────────────────────────────────────────────────
+// Two running copies fight over the same resources: they write the same
+// config.json (last writer wins), share the same PostgreSQL database, and
+// cannot both bind the ingest port (CHRONICLE_PORT). A second launch therefore
+// hands over to the copy already running and exits; that copy brings its
+// window to the front instead of the user getting a second window.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    console.log('[Chronicle] Second launch handed over to the running window.');
+    // Restores a minimized or tray-hidden window as well, not just a focused one.
+    showMainWindow();
+  });
+}
+
 // ── App settings file (userData/config.json) ─────────────────────────────────
 // The renderer's settings (theme, AI provider, model, tray behaviour, profile)
 // live in a plain JSON file instead of Chromium's localStorage: the file
