@@ -7,6 +7,7 @@ import { UploadModal, SourceFileRef, AttachmentRef } from './components/UploadMo
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { MindMap } from './components/MindMap';
 import { RightSidebar } from './components/RightSidebar';
 import { AdvancedSearch } from './components/AdvancedSearch';
 import { buildChatIngestPayload } from './utils/foundationCapture';
@@ -651,12 +652,10 @@ const App: React.FC = () => {
           </div>
         ) : state.viewMode === 'mindmap' ? (
           <div className={panel}>
-            <AnalyticsDashboard 
+            <MindMap
               chats={state.chats}
               onClose={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))}
-              onSelectChat={handleSelectChat}
-              onTagClick={handleTagClick}
-              initialView="mindmap"
+              onSelectChat={(chat) => handleSelectChat(chat, true)}
             />
           </div>
         ) : state.viewMode === 'search' ? (

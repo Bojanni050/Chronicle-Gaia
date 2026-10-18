@@ -108,6 +108,7 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
   const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [ready, setReady] = useState(false);
   const hasCentered = useRef(false);
 
   // Track mouse down position to distinguish clicks from drags
@@ -133,6 +134,10 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
 
   // Initialize simulation data
   useEffect(() => {
+    // Build after the first paint so the page (with its loading indicator) shows
+    // immediately instead of the UI freezing while the graph is prepared.
+    setReady(false);
+    const timer = setTimeout(() => {
     // sqrt spiral: even density, and a start radius that scales with sqrt(n), not n
     const nodes: Node[] = chats.map((chat, i) => {
       const angle = i * 2.399963; // golden angle
@@ -149,7 +154,10 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
       };
     });
     simulationRef.current = { nodes, links: buildLinks(nodes), running: true, dragNode: null };
+    setReady(true);
     requestFrame();
+    }, 30);
+    return () => clearTimeout(timer);
   }, [chats, requestFrame]);
 
   // Handle resize
@@ -526,6 +534,14 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
                 <RefreshIcon />
             </button>
         </div>
+
+        {!ready && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-slate-100/80 dark:bg-slate-950/80 backdrop-blur-sm">
+                <div className="w-8 h-8 rounded-full border-2 border-sage-green/30 border-t-sage-green animate-spin" />
+                <p className="text-sm font-semibold text-moss-brown dark:text-stone-300">Neural map opbouwen…</p>
+                <p className="text-xs text-moss-brown/70 dark:text-stone-500">{chats.length} chats</p>
+            </div>
+        )}
 
         {selectedNode && (
             <div
