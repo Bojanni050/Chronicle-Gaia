@@ -919,6 +919,9 @@ function setTrayOptions(options = {}) {
   else destroyTray();
 }
 
+// Echt afsluiten vanuit de UI: isQuitting omzeilt de close-to-tray-handler.
+ipcMain.handle('quit-app', () => { app.isQuitting = true; app.quit(); });
+
 ipcMain.handle('set-tray-options', (event, options) => {
   setTrayOptions(options);
   return true;

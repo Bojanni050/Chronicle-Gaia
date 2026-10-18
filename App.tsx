@@ -67,6 +67,7 @@ declare global {
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, missing?: string[], error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
       setTrayOptions: (options: { minimizeToTray: boolean; closeToTray: boolean }) => Promise<boolean>;
+      quitApp: () => Promise<void>;
       platform: string;
       onChatIngested?: (callback: (payload: { id: string; action: string; title?: string }) => void) => () => void;
     };
@@ -626,6 +627,11 @@ const App: React.FC = () => {
           <button onClick={() => setState(prev => ({ ...prev, isSettingsOpen: true }))} className={navItem(false)}>
             <SettingsIcon className="w-4 h-4" /> Settings
           </button>
+          {window.electronAPI?.quitApp && (
+            <button onClick={() => window.electronAPI?.quitApp()} className={navItem(false)} title="Sluit Chronicle volledig af (niet naar het systeemvak)">
+              <XIcon className="w-4 h-4" /> Quit
+            </button>
+          )}
         </div>
       </nav>
 

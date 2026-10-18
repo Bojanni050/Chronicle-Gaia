@@ -928,3 +928,9 @@
 - Findings: de blauwachtige dark-mode (dashboard, kaarten, knoppen) kwam van de Tailwind `slate`-klassen (koud blauwgrijs), plus enkele `blue-*`-accenten.
 - Conclusions: in plaats van tientallen klassen te herschrijven is de `slate`-schaal in de Tailwind-config vervangen door de warme `stone`-waarden, en `blue` door een sage-groene schaal; zo blijft alle bestaande markup werken en past de kleur bij de rest van het palet. De bronkleuren in de Neural Map (Gemini blauw e.d.) zijn bewust gelaten als herkenning, alleen de twee grijsblauwe zijn warm gemaakt.
 - Actions: `index.html` (colors.slate, colors.blue), `components/MindMap.tsx` (2 hex-waarden); validated: geen testwijzigingen nodig. Niet visueel gecontroleerd.
+
+## 2026-10-18 (Quit in het menu)
+
+- Findings: met close-to-tray aan verbergt het kruisje alleen het venster; afsluiten kon alleen via het tray-menu.
+- Conclusions: Quit-item onder Settings in de linker navigatie, via nieuw IPC-kanaal `quit-app` dat `app.isQuitting` zet vóór `app.quit()` — zelfde mechanisme als het tray-menu, dus de close-handler houdt de afsluiting niet tegen. Alleen zichtbaar in Electron.
+- Actions: `electron-main.js` (`quit-app`), `electron-preload.js` (`quitApp`), `App.tsx` (type + knop); validated: `node --check`, `vite build` ✓. Niet end-to-end gestart.
