@@ -406,11 +406,11 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
         </div>
 
         <div className="p-6 bg-paper dark:bg-slate-900 border-t border-sandstone dark:border-slate-800 flex justify-end gap-3">
-          <button onClick={onClose} className="px-6 py-2.5 text-xs font-black text-moss-brown uppercase tracking-widest">Cancel</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-xs font-black text-moss-brown uppercase tracking-widest">Cancel</button>
           {step === 'review' && (
             <button 
               onClick={handleFinalize} 
-              className="bg-sage-green text-white px-8 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl"
+              className="bg-sage-green text-white px-4 py-1.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-sm"
             >
               Commit to Archive
             </button>

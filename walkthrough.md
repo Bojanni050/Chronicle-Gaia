@@ -916,3 +916,9 @@
 - Findings: de Edit/Archive-knoppen (en andere icoonknoppen) kregen bij hover `text-earth-dark` — bijna zwart op de donkere achtergrond, dus het icoon verdween.
 - Conclusions: overal waar `hover:text-earth-dark` zonder dark-variant stond, is `dark:hover:text-white` toegevoegd.
 - Actions: `App.tsx` en `components/*.tsx` (11 plekken, o.a. ChatViewer-knoppen, Sidebar-typeschakelaar, modals); validated: 95 tests groen. Niet visueel gecontroleerd.
+
+## 2026-10-18 (kleinere knoppen, minder ronding)
+
+- Findings: knoppen waren groot (`px-8 py-5`, `py-3/py-4`, zware schaduwen) en de afrondingen extreem (`rounded-[2.5rem]`, `rounded-2xl/3xl`).
+- Conclusions: de radius-schaal is centraal verlaagd in de Tailwind-config (xl 0.375rem, 2xl 0.5rem, 3xl 0.625rem; `full` blijft voor pills/cirkels), arbitrary waarden zijn `rounded-xl` geworden, en knoppen zijn compacter met lichtere schaduwen.
+- Actions: `index.html` (borderRadius), `App.tsx` en `components/*.tsx` (knop-padding, schaduw, arbitrary radii, dashboard-knoppen); validated: `vite build` ✓, 95 tests groen. Niet visueel gecontroleerd.

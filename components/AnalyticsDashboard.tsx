@@ -106,14 +106,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
             </p>
           </div>
           <div className="flex flex-wrap justify-center md:justify-end gap-6 shrink-0">
-             <button onClick={onImport} className="flex items-center gap-4 bg-[#394239] hover:bg-[#2C362C] text-white px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
-                <PlusIcon /> <span className="text-lg">Import Chat</span>
+             <button onClick={onImport} className="flex items-center gap-2 bg-[#394239] hover:bg-[#2C362C] text-white px-4 py-2 rounded-xl font-bold shadow-md transition-all transform hover:-translate-y-0.5 active:scale-95">
+                <PlusIcon /> <span className="text-sm">Import Chat</span>
              </button>
-             <button onClick={onArchive} className="flex items-center gap-4 bg-[#A9AB88] hover:bg-[#929475] text-white px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
-                <DatabaseIcon /> <span className="text-lg">Archive</span>
+             <button onClick={onArchive} className="flex items-center gap-2 bg-[#A9AB88] hover:bg-[#929475] text-white px-4 py-2 rounded-xl font-bold shadow-md transition-all transform hover:-translate-y-0.5 active:scale-95">
+                <DatabaseIcon /> <span className="text-sm">Archive</span>
              </button>
-             <button onClick={onNetwork || (() => setShowMindMap(true))} className="flex items-center gap-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-earth-dark dark:text-white border border-sandstone dark:border-slate-700 px-8 py-5 rounded-[2rem] font-bold shadow-2xl transition-all transform hover:-translate-y-2 active:scale-95">
-                <NetworkIcon /> <span className="text-lg">Neural Graph</span>
+             <button onClick={onNetwork || (() => setShowMindMap(true))} className="flex items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-earth-dark dark:text-white border border-sandstone dark:border-slate-700 px-4 py-2 rounded-xl font-bold shadow-md transition-all transform hover:-translate-y-0.5 active:scale-95">
+                <NetworkIcon /> <span className="text-sm">Neural Graph</span>
              </button>
           </div>
         </div>
@@ -139,7 +139,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-12 font-sans">
           {/* Recent Additions */}
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
             <h3 className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest mb-10">
               <MessageIcon /> Recent Additions
             </h3>
@@ -151,7 +151,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
 
           {/* Activity Over Time */}
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
             <h3 className="flex items-center justify-between gap-3 text-sm font-black text-slate-400 uppercase tracking-widest mb-10">
               <div className="flex items-center gap-3"><ActivityIcon /> Archive Pulse</div>
               {stats.activity.length > 15 && (
@@ -176,7 +176,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
 
           {/* Neural Concepts (Updated to match Screenshot) */}
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none">
             <h3 className="flex items-center justify-between gap-3 text-sm font-black text-slate-400 uppercase tracking-widest mb-10">
               <div className="flex items-center gap-3">
                 <TagIcon /> Neural Concepts
@@ -208,7 +208,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         </div>
 
         {/* AI Usage Distribution */}
-        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl">
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl">
           <h3 className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest mb-10">
             <ChartIcon /> Intelligence Origin Distribution
           </h3>
@@ -248,8 +248,8 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 };
 
 const StatCard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; color: string }> = ({ label, value, icon, color }) => (
-  <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col gap-6 hover:shadow-2xl transition-all transform hover:-translate-y-1">
-    <div className={`p-4 w-fit rounded-[1.5rem] bg-slate-50 dark:bg-slate-800 ${color} shadow-inner`}>{icon}</div>
+  <div className="bg-white dark:bg-slate-900 p-10 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col gap-6 hover:shadow-2xl transition-all transform hover:-translate-y-1">
+    <div className={`p-4 w-fit rounded-xl bg-slate-50 dark:bg-slate-800 ${color} shadow-inner`}>{icon}</div>
     <div>
       <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.15em] mb-2">{label}</p>
       <p className="text-4xl font-black text-slate-900 dark:text-white truncate tracking-tighter">{value}</p>

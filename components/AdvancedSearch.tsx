@@ -287,7 +287,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 <button 
                   onClick={handleManualSearch}
                   disabled={isSearching}
-                  className={`bg-sage-green hover:bg-[#929475] text-white px-8 py-5 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl transition-all active:scale-95 flex items-center gap-2 ${isSearching ? 'opacity-70 cursor-wait' : ''}`}
+                  className={`bg-sage-green hover:bg-[#929475] text-white px-4 py-2 rounded-2xl font-black text-sm uppercase tracking-widest shadow-sm transition-all active:scale-95 flex items-center gap-2 ${isSearching ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   {isSearching ? <RefreshIcon className="w-4 h-4 animate-spin" /> : 'Run Search'}
                 </button>

@@ -492,7 +492,7 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
             <button onClick={() => setTransform(p => ({...p, k: Math.max(p.k * 0.8, 0.1)}))} className="bg-white dark:bg-slate-800 p-3 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-blue-500 transition-all">
                 <ZoomOutIcon />
             </button>
-            <button onClick={handleRecenter} className="bg-white dark:bg-slate-800 p-3 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-blue-500 transition-all">
+            <button onClick={handleRecenter} className="bg-white dark:bg-slate-800 p-2 rounded-full shadow-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-blue-500 transition-all">
                 <RefreshIcon />
             </button>
         </div>

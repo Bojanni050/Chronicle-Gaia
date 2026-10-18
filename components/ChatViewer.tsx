@@ -202,7 +202,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
     <div className="flex flex-col h-full overflow-hidden bg-paper dark:bg-stone-900 relative">
       {showArchiveConfirm && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-stone-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="max-w-md w-full bg-white dark:bg-stone-900 rounded-[2.5rem] p-10 border-2 border-sandstone/30 shadow-2xl text-center space-y-8 animate-in zoom-in">
+          <div className="max-w-md w-full bg-white dark:bg-stone-900 rounded-xl p-10 border-2 border-sandstone/30 shadow-2xl text-center space-y-8 animate-in zoom-in">
             <h2 className="text-2xl font-black text-stone-900 dark:text-white uppercase tracking-tight">Archive this chat?</h2>
             <p className="text-moss-brown font-serif italic text-base leading-relaxed">
               <span className="text-earth-dark font-bold font-sans not-italic">"{chat.title}"</span> wordt uit je actieve archief gehaald.
@@ -221,7 +221,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
             <div className="flex items-center justify-between mb-4 min-h-[32px]">
                 <div>
                     {returnToMindMap && (
-                        <button onClick={onClose} className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-lg ${isNote ? 'bg-amber-600' : 'bg-sage-green'}`}>
+                        <button onClick={onClose} className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-sm ${isNote ? 'bg-amber-600' : 'bg-sage-green'}`}>
                             <ArrowLeftIcon /> Neural Map
                         </button>
                     )}
@@ -340,7 +340,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                 onAddLink={onAddLink}
               />
 
-              <div className={`relative transition-all duration-700 ${isNote ? 'bg-[#FFFDF7] dark:bg-stone-900 p-12 rounded-[2rem] shadow-2xl border-2 border-dashed border-amber-200' : ''}`}>
+              <div className={`relative transition-all duration-700 ${isNote ? 'bg-[#FFFDF7] dark:bg-stone-900 p-12 rounded-xl shadow-2xl border-2 border-dashed border-amber-200' : ''}`}>
                   {isEditing && isNote ? (
                     <textarea className="w-full min-h-[400px] bg-transparent font-serif leading-relaxed text-lg outline-none" value={editContent} onChange={(e) => setEditContent(e.target.value)} />
                   ) : (
@@ -363,7 +363,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
               {isEditing && (
                   <div className="sticky bottom-8 flex gap-3 justify-end animate-in slide-in-from-bottom-4 z-20">
                       <button onClick={() => setIsEditing(false)} className="px-6 py-3 rounded-2xl bg-white text-stone-500 font-black text-[10px] uppercase border border-sandstone/30 shadow-lg">Discard</button>
-                      <button onClick={handleSave} className={`px-8 py-3 rounded-2xl text-white font-black text-[10px] uppercase shadow-lg ${isNote ? 'bg-amber-600' : 'bg-sage-green'}`}>Commit Synthesis</button>
+                      <button onClick={handleSave} className={`px-4 py-1.5 rounded-2xl text-white font-black text-[10px] uppercase shadow-sm ${isNote ? 'bg-amber-600' : 'bg-sage-green'}`}>Commit Synthesis</button>
                   </div>
               )}
           </div>

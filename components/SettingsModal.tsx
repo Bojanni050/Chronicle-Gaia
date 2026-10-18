@@ -115,10 +115,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-bold text-earth-dark dark:text-white mb-2">Wipe Entire Archive?</h3>
             <p className="text-moss-brown dark:text-slate-400 mb-8 max-w-xs">This action is permanent. Create a backup first?</p>
             <div className="flex flex-col w-full gap-3">
-              <button onClick={onBackup} className="w-full bg-sage-green text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2"><DatabaseIcon /> Backup Archive</button>
+              <button onClick={onBackup} className="w-full bg-sage-green text-white py-1.5 rounded-xl font-bold shadow-sm flex items-center justify-center gap-2"><DatabaseIcon /> Backup Archive</button>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => setShowClearConfirm(false)} className="bg-white dark:bg-slate-800 text-earth-dark dark:text-slate-200 py-3 rounded-xl font-bold transition-all">Cancel</button>
-                <button onClick={() => { onClearAll(); setShowClearConfirm(false); }} className="bg-terracotta text-white py-3 rounded-xl font-bold transition-all">Yes, Delete All</button>
+                <button onClick={() => setShowClearConfirm(false)} className="bg-white dark:bg-slate-800 text-earth-dark dark:text-slate-200 py-1.5 rounded-xl font-bold transition-all">Cancel</button>
+                <button onClick={() => { onClearAll(); setShowClearConfirm(false); }} className="bg-terracotta text-white py-1.5 rounded-xl font-bold transition-all">Yes, Delete All</button>
               </div>
             </div>
           </div>
@@ -150,7 +150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={localSettings.userName || ''} 
                     onChange={(e) => setLocalSettings({...localSettings, userName: e.target.value})}
                     placeholder="Your Name"
-                    className="flex-1 bg-white dark:bg-slate-900 border border-sandstone dark:border-slate-700 rounded-xl px-4 py-3 text-lg font-bold outline-none focus:ring-2 focus:ring-sage-green"
+                    className="flex-1 bg-white dark:bg-slate-900 border border-sandstone dark:border-slate-700 rounded-xl px-4 py-1.5 text-lg font-bold outline-none focus:ring-2 focus:ring-sage-green"
                   />
                 </div>
               </section>
@@ -170,7 +170,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <label className="block text-[10px] font-bold text-moss-brown mb-4 uppercase tracking-widest">Window</label>
                 <button
                   onClick={() => setLocalSettings({ ...localSettings, minimizeToTray: !localSettings.minimizeToTray })}
-                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all ${localSettings.minimizeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-1.5 rounded-xl border text-left transition-all ${localSettings.minimizeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
                 >
                   <span>
                     <span className="block text-xs font-bold text-earth-dark dark:text-white">Minimize to tray</span>
@@ -185,7 +185,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {localSettings.minimizeToTray && (
                   <button
                     onClick={() => setLocalSettings({ ...localSettings, closeToTray: !localSettings.closeToTray })}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 mt-3 rounded-xl border text-left transition-all ${localSettings.closeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-1.5 mt-3 rounded-xl border text-left transition-all ${localSettings.closeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
                   >
                     <span>
                       <span className="block text-xs font-bold text-earth-dark dark:text-white">Close to tray</span>
@@ -202,10 +202,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <label className="block text-[10px] font-bold text-moss-brown mb-4 uppercase tracking-widest">Data Management</label>
                 <div className="grid grid-cols-2 gap-3">
                   {window.electronAPI && (
-                    <button onClick={handleNativeImport} className="col-span-2 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-lg">Native Bulk Import (GPT/Claude)</button>
+                    <button onClick={handleNativeImport} className="col-span-2 flex items-center justify-center gap-2 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-sm">Native Bulk Import (GPT/Claude)</button>
                   )}
-                  <button onClick={onBackup} className="col-span-2 flex items-center justify-center gap-2 py-3 bg-sage-green text-white rounded-xl text-xs font-bold shadow-lg">Export Archive (Native/JSON)</button>
-                  <button onClick={() => setShowClearConfirm(true)} className="col-span-2 flex items-center justify-center gap-2 py-3 text-terracotta text-xs font-bold hover:underline">Wipe All Data</button>
+                  <button onClick={onBackup} className="col-span-2 flex items-center justify-center gap-2 py-1.5 bg-sage-green text-white rounded-xl text-xs font-bold shadow-sm">Export Archive (Native/JSON)</button>
+                  <button onClick={() => setShowClearConfirm(true)} className="col-span-2 flex items-center justify-center gap-2 py-1.5 text-terracotta text-xs font-bold hover:underline">Wipe All Data</button>
                 </div>
               </section>
             </>
@@ -251,7 +251,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Always visible: sits outside the scrolling tab content, above the
             footer, so a bulk-import result never needs a scroll to be seen. */}
         {importFeedback && (
-          <div className={`flex items-center justify-between gap-3 px-6 py-3 border-t text-xs font-bold ${
+          <div className={`flex items-center justify-between gap-3 px-6 py-1.5 border-t text-xs font-bold ${
             importFeedback.tone === 'ok'
               ? 'bg-sage-green/15 border-sage-green/40 text-earth-dark dark:text-slate-100'
               : importFeedback.tone === 'warn'
@@ -267,8 +267,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         )}
 
         <div className="p-6 bg-paper dark:bg-slate-900 border-t border-sandstone dark:border-slate-800 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2 text-sm font-semibold text-moss-brown hover:text-earth-dark dark:hover:text-white">Cancel</button>
-          <button onClick={handleSave} className="bg-sage-green text-white px-8 py-2.5 rounded-xl font-bold shadow-xl active:scale-95 transition-all">Update Preferences</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-moss-brown hover:text-earth-dark dark:hover:text-white">Cancel</button>
+          <button onClick={handleSave} className="bg-sage-green text-white px-4 py-1.5 rounded-xl font-bold shadow-sm active:scale-95 transition-all">Update Preferences</button>
         </div>
       </div>
     </div>
