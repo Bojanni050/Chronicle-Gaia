@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
 import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon } from './components/Icons';
@@ -23,6 +23,8 @@ declare global {
       isNative: boolean;
       getAppPath: () => Promise<string>;
       getExecutablePath: () => Promise<string>;
+      loadSettings: () => Promise<Partial<Settings> | null>;
+      saveSettings: (settings: Settings) => Promise<boolean>;
       saveDatabase: (data: any) => Promise<boolean>;
       loadDatabase: () => Promise<any>;
       clearDatabase: () => Promise<boolean>;
@@ -114,6 +116,11 @@ const App: React.FC = () => {
   });
 
   const [importNotice, setImportNotice] = useState<ImportNotice>(null);
+  // Pas opslaan als de instellingen van deze sessie geladen zijn. Zonder deze
+  // rem schrijft de mount-effect hieronder de defaults in config.json voordat
+  // de renderer het bestaande bestand gelezen heeft, en is er dus nooit iets
+  // onthouden: de vorige sessie was dan al overschreven.
+  const settingsLoadedRef = useRef(false);
 
   useEffect(() => {
     const initApp = async () => {
@@ -124,8 +131,30 @@ const App: React.FC = () => {
       if (window.electronAPI) {
         initialChats = await window.electronAPI.loadDatabase() || [];
         initialLinks = await window.electronAPI.loadLinks() || [];
-        const savedSettings = localStorage.getItem(SETTINGS_KEY);
-        if (savedSettings) initialSettings = JSON.parse(savedSettings);
+        // config.json in userData is the source of truth in native mode. A
+        // settings blob in localStorage is only what an older build left
+        // behind: adopt it once and drop the key, so the two can never
+        // disagree afterwards.
+        const savedSettings = await window.electronAPI.loadSettings();
+        if (savedSettings) {
+          // Merged over the defaults, so a file written by an older build also
+          // gets the settings fields that were added since.
+          initialSettings = { ...DEFAULT_SETTINGS, ...savedSettings };
+        } else {
+          const legacySettings = localStorage.getItem(SETTINGS_KEY);
+          if (legacySettings) {
+            try {
+              initialSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(legacySettings) };
+              localStorage.removeItem(SETTINGS_KEY);
+            } catch (e) {
+              console.warn('[Chronicle] settings migration from localStorage failed:', e);
+            }
+          }
+        }
+        // Now the values for this session are settled, make sure the file is
+        // there — a fresh profile otherwise only gets one the first time a
+        // setting changes.
+        await window.electronAPI.saveSettings(initialSettings);
       } else {
         const savedChats = localStorage.getItem(STORAGE_KEY);
         const savedLinks = localStorage.getItem(LINKS_KEY);
@@ -135,6 +164,7 @@ const App: React.FC = () => {
         if (savedSettings) initialSettings = JSON.parse(savedSettings);
       }
 
+      settingsLoadedRef.current = true;
       setState(prev => ({
         ...prev,
         chats: initialChats,
@@ -197,9 +227,14 @@ const App: React.FC = () => {
   }, [state.links]);
 
   useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+    if (!settingsLoadedRef.current) return;
+    if (window.electronAPI) {
+      window.electronAPI.saveSettings(state.settings);
+    } else {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+    }
     // De main-process beslist of minimaliseren naar het systeemvak gaat; die
-    // keuze leeft hier in localStorage, dus geef hem bij elke wijziging door.
+    // keuze staat in config.json, dus geef hem bij elke wijziging door.
     window.electronAPI?.setMinimizeToTray?.(state.settings.minimizeToTray ?? false);
   }, [state.settings]);
 

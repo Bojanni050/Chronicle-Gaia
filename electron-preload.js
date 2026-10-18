@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isNative: true,
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   getExecutablePath: () => ipcRenderer.invoke('get-executable-path'),
+  loadSettings: () => ipcRenderer.invoke('load-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   saveDatabase: (data) => ipcRenderer.invoke('save-database', data),
   loadDatabase: () => ipcRenderer.invoke('load-database'),
   clearDatabase: () => ipcRenderer.invoke('clear-database'),

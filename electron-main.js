@@ -38,6 +38,40 @@ function useLocalUserData() {
 }
 useLocalUserData();
 
+// ── App settings file (userData/config.json) ─────────────────────────────────
+// The renderer's settings (theme, AI provider, model, tray behaviour, profile)
+// live in a plain JSON file instead of Chromium's localStorage: the file
+// survives a profile reset, it can be read, backed up or edited by hand, and
+// the main process can read it without a renderer. The renderer keeps using
+// localStorage only outside Electron (npm run dev in a browser).
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'config.json');
+
+function readSettingsFile() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    console.warn(`[Chronicle] ${SETTINGS_FILE} does not hold an object, ignoring it`);
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.warn(`[Chronicle] config.json unreadable: ${e.message}`);
+  }
+  return null;
+}
+
+function writeSettingsFile(settings) {
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+    // Write-then-rename: a crash mid-write can then never leave a half file,
+    // and the settings of the previous run stay readable.
+    const tmp = `${SETTINGS_FILE}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+    fs.renameSync(tmp, SETTINGS_FILE);
+    return true;
+  } catch (err) {
+    console.error('[Chronicle] Settings write error:', err);
+    return false;
+  }
+}
+
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ai_chat_archive';
 
 // Initialize PostgreSQL Pool
@@ -416,6 +450,15 @@ ipcMain.handle('remove-link', async (event, { fromId, toId }) => {
 ipcMain.handle('get-app-path', () => app.getAppPath());
 
 ipcMain.handle('get-executable-path', () => app.getPath('exe'));
+
+// Settings round-trip. load returns null when the file does not exist yet, so
+// the renderer knows it may still have settings from localStorage to migrate.
+ipcMain.handle('load-settings', () => readSettingsFile());
+
+ipcMain.handle('save-settings', (event, settings) => {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return false;
+  return writeSettingsFile(settings);
+});
 
 ipcMain.handle('export-chats', async (event, { chats, format }) => {
   try {

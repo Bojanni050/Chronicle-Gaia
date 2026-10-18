@@ -861,3 +861,22 @@
 - Findings: Chronicle-Gaia is een Electron/Vite-app (geen Tauri); `npm start` doet al `vite build && electron .`, terwijl `npm run build` een volledige electron-builder-installer maakt (te zwaar voor even herstarten).
 - Conclusions: `build-and-start.cmd` gebruikt `npm start`; `start.cmd` start alleen Electron op de bestaande `dist`, met melding als die ontbreekt.
 - Actions: `build-and-start.cmd` en `start.cmd` (nieuw); validated: niet uitgevoerd.
+
+## 2026-10-18 (start.cmd herzien + start-fast.cmd)
+
+- Findings: `npm start` (= `vite build && electron .`) houdt het consolevenster open zolang Electron draait, doordat Electron een kindproces van cmd blijft. Opnieuw bouwen terwijl er niets veranderd is kost onnodig tijd; de bestaande `start.cmd` (commit f8d3e3e) startte al zonder rebuild.
+- Conclusions: `start.cmd` bouwt zichtbaar (`vite build`) en start Electron daarna losgekoppeld (`start "" "node_modules\electron\dist\electron.exe" .`) zodat het consolevenster direct sluit; `start-fast.cmd` slaat de rebuild over en is de snelle variant, met een melding als `dist\index.html` ontbreekt. `build-and-start.cmd` blijft ongewijzigd op `npm start`.
+- Actions: `start.cmd` herschreven, `start-fast.cmd` (nieuw); validated: `vite build` gedraaid (✓ built in 1.28s), het Electron-deel niet runtime getest.
+
+## 2026-10-18 (settings naar config.json)
+
+- Findings: settings (thema, AI-provider, model, minimizeToTray, profiel) stonden alleen in de localStorage van het Chromium-profiel — niet leesbaar, niet te back-uppen, en een blob van een oudere build miste velden die later zijn toegevoegd (zoals `minimizeToTray`), waardoor een instelling niet leek te blijven hangen.
+- Conclusions: in native modus is `config.json` in de userData-map (`%LOCALAPPDATA%\chronicle-ai-archive\config.json`) de bron van waarheid, gelezen en geschreven door de main-process via IPC. Wat nog in localStorage staat wordt eenmalig overgezet naar het bestand en daarna verwijderd, zodat de twee nooit uit elkaar kunnen lopen. Ingelezen waarden worden over `DEFAULT_SETTINGS` gemerged, zodat een bestand van een oudere build automatisch de nieuwe velden krijgt. In de browser (`npm run dev`) blijft localStorage in gebruik.
+- Actions: `electron-main.js` (`SETTINGS_FILE`, `readSettingsFile`/`writeSettingsFile` met tmp-bestand + rename, IPC `load-settings`/`save-settings`), `electron-preload.js` (`loadSettings`/`saveSettings`), `App.tsx` (types, init met migratie, sync-effect schrijft naar het bestand); validated: `node --check` op beide JS-bestanden, `vite build` ✓, `vitest run` 95 tests groen; migratie runtime bevestigd (de oude localStorage-blob met `minimizeToTray: true` stond na de eerste start in `config.json`).
+
+## 2026-10-18 (settings: opstart-race overschreef config.json)
+
+- Findings: bij de tweede start kwam `minimizeToTray` terug als `false`. Diagnose met tijdelijke `[Chronicle][diag]`-logs in de IPC-handlers liet de volgorde zien: `save-settings tray=false` (defaults) → `load-settings` (leest het zojuist overschreven bestand) → `save-settings`. De mount-effect schreef dus de defaults weg vóórdat de renderer het bestaande bestand gelezen had, waardoor er nooit iets onthouden werd. In de browser viel dit niet op: daar leest de init-effect localStorage synchroon (geen await) vóór de save-effect. De eerste run leek te werken doordat de migratietak het bestand daarna nog een keer met de oude waarden vulde.
+- Conclusions: opslaan mag pas gebeuren als de instellingen van deze sessie geladen zijn — `settingsLoadedRef` (useRef) blokkeert de save-effect tot `initApp` klaar is. Het bestand wordt daarna expliciet één keer geschreven, zodat het ook op een vers profiel meteen bestaat (de save-effect zou daar niet afgaan omdat de settings-referentie niet wijzigt).
+- Actions: `App.tsx` (`settingsLoadedRef`, guard in de settings-effect, `useRef`-import, expliciete `saveSettings` in `initApp` na het laden); validated: met een handmatig gevuld `config.json` (`userName: "LoadTest"`, `minimizeToTray: true`) een volledige start/stop gedaan — de log toont `load-settings` mét die waarden vóór elke `save-settings`, en het bestand stond na afloop nog steeds op `LoadTest`/`true`. Daarna diag-logs verwijderd, opnieuw `vite build` ✓ en 95 tests groen, en `config.json` teruggezet op de echte waarden.
+- Open: de app heeft geen `app.requestSingleInstanceLock()`, dus twee instanties kunnen naast elkaar draaien en elkaars `config.json` overschrijven (laatste wint). Niet aangepast — dat is een gedragsbeslissing, geen bugfix.
