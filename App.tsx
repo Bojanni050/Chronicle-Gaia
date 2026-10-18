@@ -66,7 +66,7 @@ declare global {
       exportChats: (chats: any[], format: string) => Promise<{success: boolean, path?: string, error?: string, cancelled?: boolean}>;
       importChats: (existingIds: string[]) => Promise<{success: boolean, chats: any[], skipped: number, missing?: string[], error?: string, cancelled?: boolean}>;
       sendNotification: (title: string, body: string) => void;
-      setMinimizeToTray: (enabled: boolean) => Promise<boolean>;
+      setTrayOptions: (options: { minimizeToTray: boolean; closeToTray: boolean }) => Promise<boolean>;
       platform: string;
       onChatIngested?: (callback: (payload: { id: string; action: string; title?: string }) => void) => () => void;
     };
@@ -82,10 +82,27 @@ const DEFAULT_SETTINGS: Settings = {
   availableModels: [],
   userAvatar: undefined,
   userName: '',
-  minimizeToTray: false
+  minimizeToTray: false,
+  closeToTray: false
 };
 
 type ImportNotice = { kind: 'duplicate' | 'updated'; title: string } | null;
+
+// Instellingen naar de main-process. In Electron is config.json de bron van
+// waarheid; de tray-keuzes moeten daar ook belanden, want de main-process
+// beslist of minimaliseren en het kruisje het venster verbergen. Buiten Electron
+// (npm run dev in de browser) blijft localStorage het opslagmedium.
+function pushSettingsToMain(settings: Settings) {
+  if (!window.electronAPI) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    return;
+  }
+  window.electronAPI.saveSettings(settings);
+  window.electronAPI.setTrayOptions?.({
+    minimizeToTray: settings.minimizeToTray ?? false,
+    closeToTray: settings.closeToTray ?? false
+  });
+}
 
 
 const App: React.FC = () => {
@@ -151,10 +168,10 @@ const App: React.FC = () => {
             }
           }
         }
-        // Now the values for this session are settled, make sure the file is
-        // there — a fresh profile otherwise only gets one the first time a
-        // setting changes.
-        await window.electronAPI.saveSettings(initialSettings);
+        // Now the values for this session are settled, hand them to the main
+        // process: a fresh profile otherwise only gets a config.json the first
+        // time a setting changes, and the tray choices would never arrive.
+        pushSettingsToMain(initialSettings);
       } else {
         const savedChats = localStorage.getItem(STORAGE_KEY);
         const savedLinks = localStorage.getItem(LINKS_KEY);
@@ -228,14 +245,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!settingsLoadedRef.current) return;
-    if (window.electronAPI) {
-      window.electronAPI.saveSettings(state.settings);
-    } else {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-    }
-    // De main-process beslist of minimaliseren naar het systeemvak gaat; die
-    // keuze staat in config.json, dus geef hem bij elke wijziging door.
-    window.electronAPI?.setMinimizeToTray?.(state.settings.minimizeToTray ?? false);
+    pushSettingsToMain(state.settings);
   }, [state.settings]);
 
   const handleAddLink = async (fromId: string, toId: string, type?: string) => {

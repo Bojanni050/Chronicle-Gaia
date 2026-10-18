@@ -63,12 +63,29 @@ if (!app.requestSingleInstanceLock()) {
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'config.json');
 
 function readSettingsFile() {
+  let text;
   try {
-    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    text = fs.readFileSync(SETTINGS_FILE, 'utf8');
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.warn(`[Chronicle] config.json unreadable: ${e.message}`);
+    return null;
+  }
+  try {
+    // A leading BOM is what a Windows editor or PowerShell drops in front of a
+    // saved file; JSON.parse refuses it, which used to make the app fall back to
+    // its defaults and overwrite the file.
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
     console.warn(`[Chronicle] ${SETTINGS_FILE} does not hold an object, ignoring it`);
   } catch (e) {
-    if (e.code !== 'ENOENT') console.warn(`[Chronicle] config.json unreadable: ${e.message}`);
+    // Keep the unreadable file for inspection instead of letting the renderer's
+    // defaults-overwrite make it disappear without a trace.
+    try {
+      fs.copyFileSync(SETTINGS_FILE, `${SETTINGS_FILE}.invalid`);
+      console.warn(`[Chronicle] config.json unreadable (${e.message}); kept a copy as config.json.invalid`);
+    } catch {
+      console.warn(`[Chronicle] config.json unreadable: ${e.message}`);
+    }
   }
   return null;
 }
@@ -852,14 +869,18 @@ ipcMain.on('notify', (event, { title, body }) => {
   }
 });
 
-// ── Systeemvak (minimize-to-tray) ────────────────────────────────────────────
-// Alleen actief als de gebruiker de optie aanzet (Voorkeuren → Algemeen). Het
+// ── Systeemvak (minimize-to-tray / close-to-tray) ────────────────────────────
+// Alleen actief als de gebruiker de optie aanzet (Voorkeuren → Window). Het
 // pictogram wordt dan aangemaakt en bij het uitzetten weer opgeruimd, zodat er
 // nooit een systeemvak-icoon verschijnt zonder dat erom gevraagd is. Staat de
 // optie aan, dan verbergt minimaliseren het venster naar het systeemvak in
 // plaats van naar de taakbalk; een klik op het pictogram brengt het terug.
+// Sluiten naar het systeemvak (het kruisje) is een aparte keuze die alleen
+// meetelt zolang deze optie aan staat: zonder pictogram zou een verborgen
+// venster niet meer terug te halen zijn.
 let tray = null;
 let minimizeToTray = false;
+let closeToTray = false;
 
 function showMainWindow() {
   if (!mainWindow) return;
@@ -889,15 +910,24 @@ function destroyTray() {
   }
 }
 
-function setMinimizeToTray(enabled) {
-  minimizeToTray = !!enabled;
+function setTrayOptions(options = {}) {
+  minimizeToTray = !!options.minimizeToTray;
+  // Sluiten naar het systeemvak hangt aan dezelfde schakelaar: is die uit, dan
+  // is er geen pictogram om het venster terug te halen.
+  closeToTray = minimizeToTray && !!options.closeToTray;
   if (minimizeToTray) createTray();
   else destroyTray();
 }
 
-ipcMain.handle('set-minimize-to-tray', (event, enabled) => {
-  setMinimizeToTray(enabled);
+ipcMain.handle('set-tray-options', (event, options) => {
+  setTrayOptions(options);
   return true;
+});
+
+// Een echt afsluiten (tray-menu → Quit, app.quit(), afsluiten van de machine)
+// mag nooit door de close-to-tray-tak worden tegengehouden.
+app.on('before-quit', () => {
+  app.isQuitting = true;
 });
 
 // Original boilerplate (rest of file) remains unchanged for window creation and other handlers...
@@ -914,6 +944,14 @@ function createWindow() {
   // Minimaliseren naar het systeemvak zodra de optie aan staat.
   mainWindow.on('minimize', (event) => {
     if (!minimizeToTray) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
+  // Het kruisje verbergt het venster naar het systeemvak in plaats van de app af
+  // te sluiten, maar alleen als de gebruiker dat zo heeft ingesteld. Afsluiten
+  // kan dan via het systeemvak-icoon (Quit), en dat zet app.isQuitting.
+  mainWindow.on('close', (event) => {
+    if (!closeToTray || app.isQuitting) return;
     event.preventDefault();
     mainWindow.hide();
   });

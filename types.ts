@@ -138,6 +138,12 @@ export interface Settings {
   userName?: string;
   /** Verberg het venster naar het systeemvak bij minimaliseren. */
   minimizeToTray: boolean;
+  /**
+   * Het kruisje verbergt het venster naar het systeemvak in plaats van de app
+   * af te sluiten. Alleen van kracht als `minimizeToTray` ook aan staat, want
+   * zonder pictogram is een verborgen venster niet meer terug te halen.
+   */
+  closeToTray: boolean;
 }
 
 export type ViewMode = 'dashboard' | 'archive' | 'mindmap' | 'search';

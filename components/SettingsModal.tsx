@@ -180,6 +180,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${localSettings.minimizeToTray ? 'translate-x-4' : ''}`} />
                   </span>
                 </button>
+                {/* Alleen zichtbaar als het systeemvak aan staat: zonder pictogram
+                    is een venster dat op het kruisje verdwijnt niet terug te halen. */}
+                {localSettings.minimizeToTray && (
+                  <button
+                    onClick={() => setLocalSettings({ ...localSettings, closeToTray: !localSettings.closeToTray })}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 mt-3 rounded-xl border text-left transition-all ${localSettings.closeToTray ? 'bg-sage-green/10 border-sage-green' : 'bg-white dark:bg-slate-800 border-sandstone dark:border-slate-700'}`}
+                  >
+                    <span>
+                      <span className="block text-xs font-bold text-earth-dark dark:text-white">Close to tray</span>
+                      <span className="block text-[10px] text-moss-brown">Het kruisje sluit Chronicle niet af, maar verbergt het venster naar het systeemvak. Afsluiten gaat dan via het pictogram (Quit).</span>
+                    </span>
+                    <span className={`shrink-0 w-10 h-6 rounded-full p-0.5 transition-all ${localSettings.closeToTray ? 'bg-sage-green' : 'bg-sandstone dark:bg-slate-600'}`}>
+                      <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${localSettings.closeToTray ? 'translate-x-4' : ''}`} />
+                    </span>
+                  </button>
+                )}
               </section>
 
               <section>
