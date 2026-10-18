@@ -188,7 +188,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
           <div className="p-6 border-b border-sandstone dark:border-stone-800 flex flex-col gap-4">
             <button 
               onClick={onClose}
-              className="flex items-center gap-2 text-[10px] font-black text-moss-brown hover:text-earth-dark dark:hover:text-white uppercase tracking-widest transition-colors mb-2"
+              className="flex items-center gap-2 text-[10px] font-black text-moss-brown hover:text-earth-dark dark:hover:text-white dark:hover:text-white uppercase tracking-widest transition-colors mb-2"
             >
               <ArrowLeftIcon className="w-3 h-3" />
               Back to Archive
@@ -259,7 +259,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 <SearchIcon className="w-4 h-4 text-[#8A9482]" />
                 <h1 className="text-sm font-black text-earth-dark dark:text-white uppercase tracking-widest">Deep Archive Search</h1>
              </div>
-             <button onClick={onClose} className="p-2 text-moss-brown hover:text-earth-dark transition-colors"><XIcon /></button>
+             <button onClick={onClose} className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors"><XIcon /></button>
           </div>
 
           <div className="p-8 border-b border-sandstone dark:border-stone-800 bg-slate-50/50 dark:bg-stone-950/50">

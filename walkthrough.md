@@ -910,3 +910,9 @@
 - Findings: in dark mode stond de abstract-tekst (`text-stone-400`) op een lichtgrijze achtergrond (`bg-slate-50/50` zonder dark-variant) — onleesbaar. De tag-knoppen hadden ook geen dark-kleuren.
 - Conclusions: de kaart krijgt een donkere achtergrond en rand in dark mode, de tekst wordt lichter (`stone-200`); tags krijgen een lichtere sage/amber tint.
 - Actions: `components/ChatViewer.tsx` (abstract-kaart, samenvattingstekst, tag-knoppen); validated: 95 tests groen. Niet visueel gecontroleerd.
+
+## 2026-10-18 (hover-iconen zichtbaar in dark mode)
+
+- Findings: de Edit/Archive-knoppen (en andere icoonknoppen) kregen bij hover `text-earth-dark` — bijna zwart op de donkere achtergrond, dus het icoon verdween.
+- Conclusions: overal waar `hover:text-earth-dark` zonder dark-variant stond, is `dark:hover:text-white` toegevoegd.
+- Actions: `App.tsx` en `components/*.tsx` (11 plekken, o.a. ChatViewer-knoppen, Sidebar-typeschakelaar, modals); validated: 95 tests groen. Niet visueel gecontroleerd.

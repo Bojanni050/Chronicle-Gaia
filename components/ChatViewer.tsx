@@ -247,16 +247,16 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                 )}
                 <div className="flex items-center gap-2 ml-4 shrink-0">
                      {isNote && (
-                       <button onClick={() => assetInputRef.current?.click()} className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20" title="Attach Image">
+                       <button onClick={() => assetInputRef.current?.click()} className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20" title="Attach Image">
                          <PlusIcon className="w-4 h-4" />
                          <input type="file" ref={assetInputRef} className="hidden" accept="image/*" onChange={handleAddAsset} />
                        </button>
                      )}
-                     <button onClick={() => setIsEditing(!isEditing)} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
+                     <button onClick={() => setIsEditing(!isEditing)} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
                      {chat.archived ? (
-                       <button onClick={() => onRestore?.(chat.id)} title="Restore from archive" className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-sage-green hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20">Restore</button>
+                       <button onClick={() => onRestore?.(chat.id)} title="Restore from archive" className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-sage-green hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20">Restore</button>
                      ) : (
-                       <button onClick={() => setShowArchiveConfirm(true)} title="Move to archive" className="p-2 text-moss-brown hover:text-earth-dark transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><ArchiveIcon /></button>
+                       <button onClick={() => setShowArchiveConfirm(true)} title="Move to archive" className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><ArchiveIcon /></button>
                      )}
                 </div>
             </div>

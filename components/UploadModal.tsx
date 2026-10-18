@@ -320,7 +320,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onUpload, set
             </h2>
             <p className="text-[10px] text-moss-brown uppercase font-bold tracking-widest">Supports Logs & Visual Assets</p>
           </div>
-          <button onClick={onClose} className="text-moss-brown hover:text-earth-dark transition-colors p-2">
+          <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors p-2">
             <XIcon />
           </button>
         </div>

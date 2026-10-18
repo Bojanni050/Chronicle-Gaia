@@ -221,7 +221,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           className={`flex-1 py-1.5 text-[8px] font-black uppercase tracking-widest transition-all rounded-md ${
                             selectedType === t 
                               ? 'bg-stone-800 dark:bg-stone-700 text-white shadow-sm' 
-                              : 'text-moss-brown hover:text-earth-dark'
+                              : 'text-moss-brown hover:text-earth-dark dark:hover:text-white'
                           }`}
                         >
                           {t}

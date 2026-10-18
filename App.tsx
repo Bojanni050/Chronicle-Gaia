@@ -600,7 +600,7 @@ const App: React.FC = () => {
           <button
             onClick={() => setState(prev => ({ ...prev, isUploading: true }))}
             title="Import Log"
-            className="px-3 rounded-xl border border-sandstone dark:border-stone-700 bg-paper dark:bg-stone-800 text-moss-brown hover:text-earth-dark transition-colors"
+            className="px-3 rounded-xl border border-sandstone dark:border-stone-700 bg-paper dark:bg-stone-800 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors"
           >
             <PlusIcon className="w-4 h-4" />
           </button>
@@ -741,7 +741,7 @@ const App: React.FC = () => {
                 ? <>Already in your archive — not imported again: <span className="not-italic">"{importNotice.title}"</span></>
                 : <>Updated existing chat (grew since last import): <span className="not-italic">"{importNotice.title}"</span></>}
             </span>
-            <button onClick={() => setImportNotice(null)} className="text-moss-brown hover:text-earth-dark shrink-0" aria-label="Dismiss">
+            <button onClick={() => setImportNotice(null)} className="text-moss-brown hover:text-earth-dark dark:hover:text-white shrink-0" aria-label="Dismiss">
               <XIcon className="w-3.5 h-3.5" />
             </button>
           </div>

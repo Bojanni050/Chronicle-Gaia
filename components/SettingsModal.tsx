@@ -126,7 +126,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="flex justify-between items-center p-6 border-b border-sandstone dark:border-slate-800">
           <h2 className="text-xl font-bold text-earth-dark dark:text-white">Chronicle Preferences</h2>
-          <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors"><XIcon /></button>
+          <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white dark:hover:text-white transition-colors"><XIcon /></button>
         </div>
 
         <div className="flex bg-sandstone/10 dark:bg-slate-800/50 p-1 border-b border-sandstone dark:border-slate-800">
@@ -262,12 +262,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span className="shrink-0 font-black">{importFeedback.tone === 'ok' ? '✓' : importFeedback.tone === 'warn' ? '!' : '×'}</span>
               {importFeedback.text}
             </span>
-            <button onClick={() => setImportFeedback(null)} className="shrink-0 text-moss-brown hover:text-earth-dark dark:hover:text-white" aria-label="Dismiss"><XIcon /></button>
+            <button onClick={() => setImportFeedback(null)} className="shrink-0 text-moss-brown hover:text-earth-dark dark:hover:text-white dark:hover:text-white" aria-label="Dismiss"><XIcon /></button>
           </div>
         )}
 
         <div className="p-6 bg-paper dark:bg-slate-900 border-t border-sandstone dark:border-slate-800 flex justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2 text-sm font-semibold text-moss-brown hover:text-earth-dark">Cancel</button>
+          <button onClick={onClose} className="px-5 py-2 text-sm font-semibold text-moss-brown hover:text-earth-dark dark:hover:text-white">Cancel</button>
           <button onClick={handleSave} className="bg-sage-green text-white px-8 py-2.5 rounded-xl font-bold shadow-xl active:scale-95 transition-all">Update Preferences</button>
         </div>
       </div>

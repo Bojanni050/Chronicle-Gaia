@@ -37,7 +37,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
               <h3>Related Chats</h3>
            </div>
-           <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors">
+           <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white dark:hover:text-white transition-colors">
               <XIcon />
            </button>
         </div>
