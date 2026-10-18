@@ -1,9 +1,10 @@
 @echo off
-rem Starts Chronicle-Gaia from the last build (dist) without rebuilding.
+rem Starts Chronicle-Gaia (vite build + electron).
 cd /d "%~dp0"
-if not exist "dist\index.html" (
-  echo No build found - run build-and-start.cmd first.
+call npm start
+if errorlevel 1 (
+  echo.
+  echo Start failed.
   pause
   exit /b 1
 )
-start "" "node_modules\.bin\electron.cmd" .
