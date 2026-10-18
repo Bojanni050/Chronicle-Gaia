@@ -130,13 +130,19 @@ per levering, dus een bulk-run is idempotent: tweede keer draaien geeft overal
   `/app/{id}`-load rendert alleen de shell): dit leest de DOM. Selectors uit
   `davidmalko87/gemini-chat-exporter` (`.conversation-container`,
   `user-query .query-text`, `model-response .markdown`). Bulk klikt de zijbalk-
-  anchors aan (met stabiliteitswacht tegen het "stale body"-probleem).
+  anchors aan (met stabiliteitswacht tegen het "stale body"-probleem). Let op
+  `.screen-reader-user-query-label`: Gemini zet daar de volledige prompt in, dus
+  zonder strip belandt elke beurt dubbel in het archief (zie `normalize.js`).
 - `content/mistral.js` — Le Chat leest via tRPC (`chat.byId` voor de titel,
   `message.all` voor de berichten met `role` + `contentChunks`) en het seint op
   `POST /api/chat`. Alleen huidig gesprek + auto-capture; DOM-fallback erachter.
 - `content/normalize.js` — gedeelde UI: de knoppen in één inklapbare container
   (`#chronicle-ui`) die in de gekozen hoek staat, plus statusfeedback en de
-  ParsedConversation-whitelist.
+  ParsedConversation-whitelist. Hier zit ook `innerTextWithCodeFences`: de
+  tekstextractie voor élk provider-script. Die leest echte `innerText` (kloon
+  tijdelijk renderbaar buiten beeld, want `innerText` op een losse knoop valt
+  terug op `textContent`) en laat a11y-only tekst (`.cdk-visually-hidden`,
+  `.sr-only`) weg.
 - `options/` — listener-URL + token + de meldingenvoorkeuren
   (`uiCorner`, `uiCollapsed`), allemaal in `chrome.storage.local`.
 - **Toolbar-knop** — het extensie-icoon in de werkbalk triggert dezelfde export

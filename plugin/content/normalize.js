@@ -232,22 +232,52 @@
   }
 
   /**
+   * Tekst die alleen voor schermlezers bedoeld is: visueel verborgen maar wél
+   * gerenderd, dus `innerText` neemt hem gewoon mee. Gemini zet de volledige
+   * prompt in `.screen-reader-user-query-label` ("You said …") náást de
+   * zichtbare `.query-text-line`s; zonder deze strip stond elke gebruikersbeurt
+   * dubbel in het archief ("Ja" → "You said Ja Ja").
+   */
+  const A11Y_ONLY = '.cdk-visually-hidden, .screen-reader-user-query-label, .sr-only, .visually-hidden';
+
+  /**
    * Zet een DOM-node om naar tekst waarbij codeblokken als echte markdown-
    * fences gemarkeerd worden, zodat de archive-viewer (react-markdown) ze als
    * codeblok rendert i.p.v. platgeslagen tekst.
+   *
+   * Let op: `clone.innerText` op een losse knoop is géén innerText — een node
+   * die niet gerenderd wordt valt volgens de spec terug op `textContent`. Dat
+   * kostte de newlines tussen blokken (een prompt van dertien regels werd één
+   * regel) én liet verborgen tekst door. De kloon hangt daarom even renderbaar
+   * maar buiten beeld in de pagina; `visibility: hidden` mag niet, want dan is
+   * innerText leeg.
    */
   function innerTextWithCodeFences(node) {
     const clone = node.cloneNode(true);
     const pres = [...clone.querySelectorAll('pre')];
     for (const pre of pres) {
       const code = pre.querySelector('code');
-      const text = (code || pre).innerText || '';
+      // jsdom (de tests) kent innerText niet; daar valt het terug op textContent.
+      const block = code || pre;
+      const text = typeof block.innerText === 'string' ? block.innerText : block.textContent || '';
       const langMatch = (code?.className || '').match(/language-([\w-]+)/);
       const lang = langMatch ? langMatch[1] : '';
       const fenced = '\n```' + lang + '\n' + text.replace(/\n+$/, '') + '\n```\n';
       pre.replaceWith(document.createTextNode(fenced));
     }
-    return clone.innerText || '';
+    for (const a11y of clone.querySelectorAll(A11Y_ONLY)) a11y.remove();
+
+    const host = document.createElement('div');
+    Object.assign(host.style, { position: 'fixed', top: '0px', left: '-99999px' });
+    host.appendChild(clone);
+    (document.body || document.documentElement).appendChild(host);
+    try {
+      // jsdom (de tests) kent innerText niet; daar valt het terug op textContent.
+      const text = typeof clone.innerText === 'string' ? clone.innerText : clone.textContent;
+      return text || '';
+    } finally {
+      host.remove();
+    }
   }
 
   /**
