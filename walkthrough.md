@@ -898,3 +898,9 @@
 - Findings: de UI voelde zwaar en rommelig: een brede topbalk met vijf knoppen, een 560px brede lijst vol dikke omrande kaarten met hoofdletter-microlabels, een enorme titel (`text-6xl`) in de viewer, en een Tailwind-lettergrootteschaal (`xs` 0.95rem, `sm` 1.2rem) die alles opblies.
 - Conclusions: layout naar het Evernote-voorbeeld — links een navigatiebalk (merk, Note-knop, Insights / Knowledge Base / Power Search / Neural Map, Settings onderaan), in het midden een vlakke notitielijst op de achtergrond, rechts de editor als afgeronde witte kaart. Alle bestaande kleuren (warm-beige, paper, sandstone, sage-green, terracotta, #394239) zijn behouden; alleen verhoudingen, randen en typografie zijn aangepast. Geen logica of dependency gewijzigd.
 - Actions: `App.tsx` (topbalk vervangen door `<nav>`, views in afgeronde panelen, `PencilIcon` import), `components/Sidebar.tsx` (breedte 380, transparante kolom, pill-zoekveld, ronde tag-chips, "N notes found"), `components/ChatCard.tsx` (vlakke rijen met scheidingslijn, titel/samenvatting/bron+tags/datum), `components/ChatViewer.tsx` (titel `text-3xl/4xl`, lichtere kop), `index.html` (kleinere lettergrootteschaal, beige achtergrond, scrollbar); validated: `vite build` ✓, 95 tests groen. Niet visueel in Electron bekeken.
+
+## 2026-10-18 (geselecteerde tags in de viewer)
+
+- Findings: de tags bovenaan een chat zijn klikbaar (ze openen het gerelateerde-tags-paneel), maar de actieve selectie was niet zichtbaar.
+- Conclusions: geselecteerde tags krijgen terracotta met witte tekst, zoals de tags in de lijst al deden; hover geeft een terracotta rand. `activeRelatedTags` werd al aan de viewer doorgegeven.
+- Actions: `components/ChatViewer.tsx` (tag-knop klasse); validated: 95 tests groen.

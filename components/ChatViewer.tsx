@@ -326,7 +326,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
               <div className="flex flex-wrap gap-2 px-2">
                   {(isEditing ? editTags : chat.tags).map(tag => (
-                      <button key={tag} onClick={() => !isEditing && onTagClick(tag)} className={`px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 ${isNote ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-sage-green/10 border-sage-green/20 text-sage-green'}`}>
+                      <button key={tag} onClick={() => !isEditing && onTagClick(tag)} className={`px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${activeRelatedTags.includes(tag) ? 'bg-terracotta border-terracotta text-white shadow-sm' : isNote ? 'bg-amber-100 border-amber-200 text-amber-700 hover:border-terracotta/50' : 'bg-sage-green/10 border-sage-green/20 text-sage-green hover:border-terracotta/50'}`}>
                           <TagIcon className="w-3 h-3" /> {tag}
                       </button>
                   ))}
