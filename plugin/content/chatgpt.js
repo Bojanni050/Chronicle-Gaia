@@ -209,7 +209,7 @@
    * blobgrootte, gemeten: 2405280), niet op `alt` — die is generiek
    * ("Gegenereerde afbeelding 1").
    */
-  async function inlineBlobImages(attachments) {
+  async function inlineBlobImages(attachments, attempt = 0) {
     const pending = attachments.filter((ref) => ref && !ref.url && !ref.dataBase64);
     const blobs = domImageRefs().filter((image) => image.blob);
     if (!pending.length) return attachments;
@@ -299,6 +299,15 @@
           )
           .join(', ')
       );
+    }
+    // De pagina laadt haar blob-afbeeldingen lui: direct na een verversing
+    // staan er minder blobs dan er verwijzingen zijn (gemeten: 6 van de 12, en
+    // een minuut later 14). Eén keer opnieuw kijken is genoeg om dat verschil
+    // weg te nemen; de al gekoppelde verwijzingen blijven staan.
+    if (unmatched.length && attempt < 2) {
+      console.info('[Chronicle] blobmatch: opnieuw proberen over 800 ms');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return inlineBlobImages(attachments, attempt + 1);
     }
     return attachments;
   }
