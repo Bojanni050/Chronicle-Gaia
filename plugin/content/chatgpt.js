@@ -115,9 +115,16 @@
   function messageText(msg) {
     const parts = msg?.content?.parts;
     if (Array.isArray(parts)) {
-      return parts.filter((p) => typeof p === 'string' && p.trim()).join('\n').trim();
+      const text = parts.filter((p) => typeof p === 'string' && p.trim()).join('\n').trim();
+      if (text) return text;
     }
-    if (typeof msg?.content?.text === 'string') return msg.content.text.trim();
+    // Alleen tekstinhoud. `code` is de tool-call van de image generator: de ruwe
+    // JSON-argumenten ("size", "prompt") horen niet als assistenttekst in het
+    // transcript, en `execution_output` is gereedschapsuitvoer.
+    const type = msg?.content?.content_type;
+    if (!type || type === 'text' || type === 'multimodal_text') {
+      if (typeof msg?.content?.text === 'string') return msg.content.text.trim();
+    }
     return '';
   }
 
@@ -239,11 +246,20 @@
         // sediment-variant heeft geen download-endpoint, daar vult de DOM de url.
         const match = pointer.match(/^(?:file-service|sediment):\/\/(.+)$/);
         if (!match) continue;
+        const generated = String(match[1]).startsWith('file_');
+        // De titel die ChatGPT zelf aan de generatie gaf ("Winterkat") is een
+        // betere bestandsnaam dan een id.
+        const genTitle = (msg.metadata && msg.metadata.image_gen_title) || null;
         add(window.__chronicleUI.attachmentRef({
           providerFileId: match[1],
           download: 'chatgpt',
-          filename: match[1].startsWith('file_') ? `chatgpt-afbeelding-${match[1].slice(-8)}` : null,
+          filename: genTitle
+            ? String(genTitle).trim()
+            : generated
+              ? `chatgpt-afbeelding-${match[1].slice(-8)}`
+              : null,
           mimeType: part.mime_type || null,
+          size: typeof part.size_bytes === 'number' ? part.size_bytes : null,
         }));
       }
     }

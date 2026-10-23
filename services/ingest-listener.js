@@ -367,7 +367,18 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
     const hasNewAttachments = (normalized.item.capture.attachments || []).some(
       (att) => !existingIds.has(att.id)
     );
-    if (sameContent && !hasNewAttachments) {
+    // Een mislukte download is ook een uitkomst: zonder deze vergelijking zou
+    // een gap die later wél op te halen is nooit als wijziging gelden, en werd
+    // een tweede poging stil als duplicate weggegooid.
+    const existingGaps = new Set(
+      ((existing.capture && existing.capture.attachmentGaps) || [])
+        .map((gap) => gap && `${gap.filename || ''}|${gap.reason || ''}`)
+        .filter(Boolean)
+    );
+    const hasNewGaps = (normalized.item.capture.attachmentGaps || []).some(
+      (gap) => !existingGaps.has(`${gap.filename || ''}|${gap.reason || ''}`)
+    );
+    if (sameContent && !hasNewAttachments && !hasNewGaps) {
       return { status: 200, body: { action: 'duplicate', id: existing.id } };
     }
     // Same conversation, grown or changed: update the row in place and
