@@ -18,6 +18,34 @@ import { foundationContentHash, normalizeUrl } from './chatDedup';
 // available to the CommonJS main process (the listener reuses it on rows).
 export { foundationContentHash, normalizeUrl };
 
+/**
+ * One attachment that is already in the archive and in Foundation. The bytes
+ * never travel with the chat: the plugin uploads them to POST /ingest/attachment
+ * first and only sends these references along.
+ */
+export interface IngestAttachment {
+  id: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  url?: string;
+  /** sha256 of Chronicle's local mirror (content-addressed blob). */
+  hash?: string;
+  /** Local viewer URL for the mirror (chronicle-asset://<hash>). */
+  localUrl?: string;
+}
+
+/**
+ * A file the plugin saw in the conversation but could not obtain. It stays on
+ * the archive row as an honest record and never reaches Foundation: a chat must
+ * not claim an attachment that does not exist there.
+ */
+export interface IngestAttachmentGap {
+  filename?: string;
+  mimeType?: string;
+  reason: string;
+}
+
 /** Fields the listener accepts on POST /ingest/chat — the raw conversation. */
 export interface IngestChatInput {
   content: string;
@@ -27,6 +55,8 @@ export interface IngestChatInput {
   sourceProvider?: string;
   occurredAt?: number | string;
   createdAt?: number | string;
+  attachments?: IngestAttachment[];
+  attachmentGaps?: IngestAttachmentGap[];
 }
 
 /** Server-owned fields Foundation refuses on every entry-point. */
@@ -45,7 +75,17 @@ const DERIVED_KEYS = ['tags', 'summary', 'embedding', 'assets', 'links'];
 
 const FORBIDDEN_KEYS = [...SERVER_OWNED_KEYS, ...DERIVED_KEYS];
 
-const ALLOWED_KEYS = ['content', 'turns', 'title', 'url', 'sourceProvider', 'occurredAt', 'createdAt'];
+const ALLOWED_KEYS = [
+  'content',
+  'turns',
+  'title',
+  'url',
+  'sourceProvider',
+  'occurredAt',
+  'createdAt',
+  'attachments',
+  'attachmentGaps',
+];
 
 /**
  * Maps Foundation's lowercase provider name onto Chronicle's display source
@@ -118,8 +158,78 @@ export function validateIngestChatInput(raw: any): IngestValidation {
   if (raw.createdAt !== undefined && toEpochMs(raw.createdAt) === undefined) {
     details.push(`"createdAt" is not a valid timestamp: ${String(raw.createdAt)}`);
   }
+  if (raw.attachments !== undefined) {
+    if (!Array.isArray(raw.attachments)) {
+      details.push('"attachments" must be an array of {id, filename, mimeType, size, url}');
+    } else {
+      raw.attachments.forEach((att: any, i: number) => {
+        if (!att || typeof att !== 'object' || Array.isArray(att)) {
+          details.push(`"attachments[${i}]" must be an object`);
+        } else if (typeof att.id !== 'string' || !att.id.trim()) {
+          details.push(`"attachments[${i}].id" is required (the Foundation attachment id)`);
+        }
+      });
+    }
+  }
+  if (raw.attachmentGaps !== undefined) {
+    if (!Array.isArray(raw.attachmentGaps)) {
+      details.push('"attachmentGaps" must be an array of {filename, mimeType, reason}');
+    } else {
+      raw.attachmentGaps.forEach((gap: any, i: number) => {
+        if (!gap || typeof gap !== 'object' || typeof gap.reason !== 'string' || !gap.reason.trim()) {
+          details.push(`"attachmentGaps[${i}].reason" is required`);
+        }
+      });
+    }
+  }
   if (details.length) return { error: 'invalid ingest payload', details };
   return {};
+}
+
+/**
+ * Keeps only the attachment fields Chronicle stores. Foundation gets a stricter
+ * subset (id/filename/mimeType/size/url) through buildChatIngestPayload; the
+ * local hash and viewer URL are archive-only.
+ */
+function cleanAttachments(raw: unknown): IngestAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: IngestAttachment[] = [];
+  for (const att of raw) {
+    const id = cleanString(att && (att as any).id);
+    if (!id) continue;
+    const entry: IngestAttachment = { id };
+    const filename = cleanString((att as any).filename);
+    if (filename) entry.filename = filename;
+    const mimeType = cleanString((att as any).mimeType);
+    if (mimeType) entry.mimeType = mimeType;
+    const size = Number((att as any).size);
+    if (Number.isFinite(size) && size >= 0) entry.size = size;
+    const url = cleanString((att as any).url);
+    if (url) entry.url = url;
+    const hash = cleanString((att as any).hash);
+    if (hash && /^[0-9a-f]{64}$/i.test(hash)) entry.hash = hash.toLowerCase();
+    const localUrl = cleanString((att as any).localUrl);
+    if (localUrl) entry.localUrl = localUrl;
+    out.push(entry);
+  }
+  return out;
+}
+
+/** Gaps are archive-only bookkeeping; an empty reason would hide a failure. */
+function cleanGaps(raw: unknown): IngestAttachmentGap[] {
+  if (!Array.isArray(raw)) return [];
+  const out: IngestAttachmentGap[] = [];
+  for (const gap of raw) {
+    const reason = cleanString(gap && (gap as any).reason);
+    if (!reason) continue;
+    const entry: IngestAttachmentGap = { reason };
+    const filename = cleanString((gap as any).filename);
+    if (filename) entry.filename = filename;
+    const mimeType = cleanString((gap as any).mimeType);
+    if (mimeType) entry.mimeType = mimeType;
+    out.push(entry);
+  }
+  return out;
 }
 
 export interface NormalizedIngestChat {
@@ -140,7 +250,11 @@ export interface NormalizedIngestChat {
       turns: Array<{ role: 'user' | 'assistant'; text: string }>;
       occurredAt?: string;
       url?: string;
+      attachments?: IngestAttachment[];
+      attachmentGaps?: IngestAttachmentGap[];
     };
+    /** Inline-viewable images, mirrored locally (chronicle-asset://<hash>). */
+    assets?: string[];
     foundation: { status: 'pending'; at: number };
     contentHash: string;
   };
@@ -189,6 +303,21 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   if (occurredMs !== undefined) capture.occurredAt = new Date(occurredMs).toISOString();
   if (url) capture.url = url;
 
+  // Attachments are references to bytes that were uploaded before the chat
+  // arrived (POST /ingest/attachment mirrors them locally and in Foundation).
+  // Gaps are files the plugin saw but could not obtain: archive-only, so the
+  // Foundation observation never claims a file it does not have.
+  const attachments = cleanAttachments(raw.attachments);
+  if (attachments.length) capture.attachments = attachments;
+  const attachmentGaps = cleanGaps(raw.attachmentGaps);
+  if (attachmentGaps.length) capture.attachmentGaps = attachmentGaps;
+
+  // Images render inline in the viewer through Chronicle's local mirror; the
+  // archive stores the URL, never the bytes (the blob on disk is the copy).
+  const assets = attachments
+    .filter((att) => (att.mimeType || '').toLowerCase().startsWith('image/') && att.localUrl)
+    .map((att) => att.localUrl as string);
+
   // De archiefregel krijgt het originele gespreksmoment als createdAt, niet de
   // ingest-tijd: sorteren (App.filteredChats) en de datum op de kaart/zoekfilters
   // werken op createdAt, dus een geïmporteerde chat hoort op zijn echte datum te
@@ -201,6 +330,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
     url,
     occurredAt: capture.occurredAt,
     turns: capture.turns,
+    attachments,
   } as RawChatCapture);
 
   return {
@@ -214,6 +344,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
       source: toSourceType(sourceProvider),
       createdAt,
       updatedAt,
+      assets: assets.length ? assets : undefined,
       capture,
       foundation: { status: 'pending', at: now },
       contentHash: foundationContentHash(content),

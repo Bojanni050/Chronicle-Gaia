@@ -76,6 +76,40 @@
     return typeof item?.content === 'string' ? item.content.trim() : '';
   }
 
+  /**
+   * Bestands- en afbeeldingschunks. De tRPC-vorm verschilt per versie, dus dit
+   * is bewust defensief: alleen objecten met een http(s)-download-URL tellen.
+   * Onbekende vormen leveren geen bijlage op (en dus ook geen verzonnen gap).
+   */
+  function attachmentsFromItems(items) {
+    const out = [];
+    const seen = new Set();
+    const push = (file) => {
+      if (!file || typeof file !== 'object') return;
+      const url = file.downloadUrl || file.download_url || file.url || file.fileUrl || file.src;
+      if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+      if (seen.has(url)) return;
+      seen.add(url);
+      out.push(window.__chronicleUI.attachmentRef({
+        url,
+        download: 'direct',
+        filename: file.fileName || file.filename || file.name || null,
+        mimeType: file.mimeType || file.mime_type || null,
+        size: typeof file.size === 'number' ? file.size : null,
+      }));
+    };
+    for (const item of items) {
+      for (const chunk of item?.contentChunks || []) {
+        if (!chunk || typeof chunk !== 'object' || chunk.type === 'text') continue;
+        push(chunk.file);
+        push(chunk.image);
+        push(chunk.document);
+        if (chunk.content && typeof chunk.content === 'object') push(chunk.content);
+      }
+    }
+    return out;
+  }
+
   function turnsFromApi(items) {
     const turns = [];
     for (const item of items) {
@@ -117,12 +151,14 @@
   async function collectConversation() {
     const id = conversationIdFromUrl();
     let turns = null;
+    let attachments = [];
     let title = null;
     let occurredAt = null;
     if (id) {
       try {
         const items = messageItems(await trpcQuery('message.all', { chatId: id }));
         turns = turnsFromApi(items);
+        attachments = attachmentsFromItems(items);
         const last = items[items.length - 1];
         occurredAt = last && last.createdAt ? last.createdAt : null;
       } catch (err) {
@@ -140,6 +176,7 @@
     }
     if (!turns || !turns.length) {
       turns = turnsFromDom();
+      attachments = [];
     }
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };
@@ -151,6 +188,7 @@
       url: id ? `https://chat.mistral.ai/chat/${id}` : location.href,
       sourceProvider: 'mistral',
       occurredAt: toEpochMs(occurredAt),
+      attachments,
     });
   }
 

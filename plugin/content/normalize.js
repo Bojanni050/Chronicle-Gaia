@@ -192,6 +192,9 @@
       return;
     }
     setButtonState(button, response.action || 'create');
+    if (response.gapCount) {
+      button.title = `${response.gapCount} bijlage(n) niet opgehaald — zie de chat in Chronicle`;
+    }
   }
 
   /**
@@ -215,13 +218,97 @@
   }
 
   /** Bouwt de ParsedConversation-vorm: alleen de velden die de listener toestaat. */
-  function buildConversation({ content, turns, title, url, sourceProvider, occurredAt }) {
+  function buildConversation({ content, turns, title, url, sourceProvider, occurredAt, attachments, attachmentGaps }) {
     const conv = { content, turns, sourceProvider };
     if (title) conv.title = title;
     if (url) conv.url = url;
     const occurredMs = toEpochMs(occurredAt);
     if (occurredMs !== undefined) conv.occurredAt = occurredMs;
+    // Bijlagen reizen als referenties mee, nooit als bytes: de service worker
+    // haalt ze op en levert ze eerst apart aan Chronicle. Lege lijsten blijven
+    // weg zodat de payload dezelfde vorm houdt als voorheen.
+    if (Array.isArray(attachments) && attachments.length) conv.attachments = attachments;
+    if (Array.isArray(attachmentGaps) && attachmentGaps.length) conv.attachmentGaps = attachmentGaps;
     return conv;
+  }
+
+  /**
+   * Bouwt één bijlagereferentie en laat lege velden weg. `download` zegt hoe de
+   * service worker aan de bytes komt ('chatgpt' | 'claude' | 'direct'), `text`
+   * is een tekstextractie die als .txt bewaard wordt als de bytes ontbreken.
+   */
+  function attachmentRef(fields) {
+    const ref = {};
+    const src = fields || {};
+    if (src.filename) ref.filename = String(src.filename);
+    if (src.mimeType) ref.mimeType = String(src.mimeType);
+    if (typeof src.size === 'number' && Number.isFinite(src.size) && src.size >= 0) ref.size = src.size;
+    if (src.providerFileId) ref.providerFileId = String(src.providerFileId);
+    if (src.url) ref.url = String(src.url);
+    if (src.download) ref.download = String(src.download);
+    if (src.org) ref.org = String(src.org);
+    // Tekstextracties zijn fallback-bytes voor de service worker en belanden
+    // nooit in de chatpayload. Ze gaan wél mee in de retry-queue (storage),
+    // dus begrensd: een enorme PDF mag het queue-quotum niet opeten.
+    if (src.text && String(src.text).trim()) ref.text = String(src.text).slice(0, 100000);
+    return ref;
+  }
+
+  /** Bestandsextensie bij een mime-type; gebruikt voor naamloze afbeeldingen. */
+  function extensionForMime(mimeType) {
+    const map = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'image/svg+xml': 'svg',
+      'application/pdf': 'pdf',
+      'text/plain': 'txt',
+      'text/markdown': 'md',
+      'text/csv': 'csv',
+      'application/json': 'json',
+      'application/zip': 'zip',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    };
+    return map[String(mimeType || '').toLowerCase()] || 'bin';
+  }
+
+  /** Laatste padsegment van een URL, zonder query; decodeert %20 etc. */
+  function filenameFromUrl(url, fallback) {
+    try {
+      const parsed = new URL(url, location.href);
+      const last = parsed.pathname.split('/').filter(Boolean).pop();
+      if (last) return decodeURIComponent(last);
+    } catch {
+      // geen geldige URL: val terug op de opgegeven naam
+    }
+    return fallback || 'bestand';
+  }
+
+  /** Mime-type uit een bestandsnaam (grof; alleen als de bron niets beters geeft). */
+  function mimeFromFilename(filename) {
+    const ext = String(filename || '').toLowerCase().split('.').pop();
+    const map = {
+      pdf: 'application/pdf',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      svg: 'image/svg+xml',
+      txt: 'text/plain',
+      md: 'text/markdown',
+      csv: 'text/csv',
+      json: 'application/json',
+      zip: 'application/zip',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    };
+    return map[ext] || 'application/octet-stream';
   }
 
   /** "User: …" / "Assistant: …" — zelfde transcriptvorm als sourceParsers.ts. */
@@ -349,7 +436,7 @@
         }
         lastReport = response.report;
         const done = Math.min(i + CHUNK, total);
-        button.textContent = `⇊ geleverd ${done}/${total} • nieuw ${response.report.created} • bijgewerkt ${response.report.updated} • bekend ${response.report.duplicates} ✓`;
+        button.textContent = `⇊ geleverd ${done}/${total} • nieuw ${response.report.created} • bijgewerkt ${response.report.updated} • bekend ${response.report.duplicates} ✓${response.report.gaps ? ` • ${response.report.gaps} bestand(en) niet` : ''}`;
         await new Promise((r) => setTimeout(r, 50));
       }
       if (lastReport) {
@@ -375,6 +462,10 @@
     transcriptFromTurns,
     innerTextWithCodeFences,
     setCollapsed,
+    attachmentRef,
+    extensionForMime,
+    filenameFromUrl,
+    mimeFromFilename,
   };
   loadUiPreferences();
   console.info('[Chronicle] content helper geinjecteerd op', location.host);

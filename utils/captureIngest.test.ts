@@ -171,3 +171,81 @@ describe('toSourceType', () => {
     expect(toSourceType(undefined)).toBe('Other');
   });
 });
+
+describe('attachments', () => {
+  const IMAGE = {
+    id: 'att-1',
+    filename: 'foto.png',
+    mimeType: 'image/png',
+    size: 2048,
+    url: '/api/attachments/att-1/foto.png',
+    hash: 'a'.repeat(64),
+    localUrl: `chronicle-asset://blob/${'a'.repeat(64)}`,
+  };
+  const PDF = {
+    id: 'att-2',
+    filename: 'rapport.pdf',
+    mimeType: 'application/pdf',
+    size: 90000,
+    url: '/api/attachments/att-2/rapport.pdf',
+    hash: 'b'.repeat(64),
+    localUrl: `chronicle-asset://blob/${'b'.repeat(64)}`,
+  };
+
+  it('accepts attachment references and gaps', () => {
+    expect(validateIngestChatInput({ ...VALID, attachments: [IMAGE], attachmentGaps: [{ filename: 'x.pdf', reason: 'te groot' }] })).toEqual({});
+  });
+
+  it('requires an id on every attachment', () => {
+    const res = validateIngestChatInput({ ...VALID, attachments: [{ filename: 'zonder-id.pdf' }] });
+    expect(res.error).toBe('invalid ingest payload');
+    expect(res.details).toContain('"attachments[0].id" is required (the Foundation attachment id)');
+  });
+
+  it('requires a reason on every gap', () => {
+    const res = validateIngestChatInput({ ...VALID, attachmentGaps: [{ filename: 'x.pdf' }] });
+    expect(res.details).toContain('"attachmentGaps[0].reason" is required');
+  });
+
+  it('forwards attachments to Foundation without archive-only fields', () => {
+    const { foundationPayload, item } = normalizeIngestChat({ ...VALID, attachments: [IMAGE, PDF] }, 'row-1');
+    expect(foundationPayload.attachments).toEqual([
+      { id: 'att-1', filename: 'foto.png', mimeType: 'image/png', size: 2048, url: '/api/attachments/att-1/foto.png' },
+      { id: 'att-2', filename: 'rapport.pdf', mimeType: 'application/pdf', size: 90000, url: '/api/attachments/att-2/rapport.pdf' },
+    ]);
+    // hash/localUrl stay in the archive: they describe chronicle-asset URLs
+    // that mean nothing to Foundation.
+    expect(foundationPayload.attachments?.[0]).not.toHaveProperty('hash');
+    expect(item.capture.attachments?.[0]).toMatchObject({ hash: IMAGE.hash, localUrl: IMAGE.localUrl });
+  });
+
+  it('keeps gaps in the archive and out of the Foundation payload', () => {
+    const { foundationPayload, item } = normalizeIngestChat(
+      { ...VALID, attachments: [PDF], attachmentGaps: [{ filename: 'groot.pdf', mimeType: 'application/pdf', reason: 'groter dan 25 MB' }] },
+      'row-1'
+    );
+    expect(foundationPayload.attachments).toHaveLength(1);
+    expect(foundationPayload).not.toHaveProperty('attachmentGaps');
+    expect(item.capture.attachmentGaps).toEqual([
+      { filename: 'groot.pdf', mimeType: 'application/pdf', reason: 'groter dan 25 MB' },
+    ]);
+  });
+
+  it('renders image attachments through the local mirror, not files', () => {
+    const { item } = normalizeIngestChat({ ...VALID, attachments: [IMAGE, PDF] }, 'row-1');
+    expect(item.assets).toEqual([IMAGE.localUrl]);
+  });
+
+  it('omits assets when only non-images were captured', () => {
+    const { item } = normalizeIngestChat({ ...VALID, attachments: [PDF] }, 'row-1');
+    expect(item.assets).toBeUndefined();
+  });
+
+  it('drops malformed entries instead of half-storing them', () => {
+    const { item } = normalizeIngestChat(
+      { ...VALID, attachments: [{ id: 'ok' }, { id: '' }, { filename: 'geen-id' }] },
+      'row-1'
+    );
+    expect(item.capture.attachments).toEqual([{ id: 'ok' }]);
+  });
+});

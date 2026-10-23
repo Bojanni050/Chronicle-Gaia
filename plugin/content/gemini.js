@@ -97,6 +97,49 @@
     return fromDoc || null;
   }
 
+  /**
+   * Afbeeldingen en bestandschips uit de DOM. Gemini heeft geen leesbare API
+   * voor bijlagen, dus dit is de enige route — vandaar best-effort: alleen
+   * http(s)-URL's (blob: kan de service worker niet ophalen) en alleen
+   * inhoudelijke afbeeldingen (geen avatars/icons).
+   */
+  function attachmentsFromDom() {
+    const out = [];
+    const seen = new Set();
+    const push = (ref) => {
+      const key = ref.url || ref.providerFileId;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(ref);
+    };
+    for (const container of document.querySelectorAll(SELECTORS.turnContainer)) {
+      for (const img of container.querySelectorAll('img[src]')) {
+        const src = img.currentSrc || img.src;
+        if (!src || !/^https?:/i.test(src)) continue;
+        const alt = (img.alt || '').trim();
+        if (/avatar|profile|emoji|icon|logo/i.test(src + ' ' + alt)) continue;
+        if ((img.naturalWidth || 0) > 0 && img.naturalWidth < 64) continue;
+        push(window.__chronicleUI.attachmentRef({
+          url: src,
+          download: 'direct',
+          filename: alt && alt.length > 2 ? alt : null,
+        }));
+      }
+      for (const anchor of container.querySelectorAll('a[href]')) {
+        const href = anchor.href;
+        if (!href || !/^https?:/i.test(href)) continue;
+        if (!/googleusercontent|contribution\.usercontent|drive\.google/i.test(href)) continue;
+        const label = (anchor.getAttribute('download') || anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
+        push(window.__chronicleUI.attachmentRef({
+          url: href,
+          download: 'direct',
+          filename: label && label.length > 2 ? label : null,
+        }));
+      }
+    }
+    return out;
+  }
+
   function collectConversation() {
     const id = conversationIdFromUrl();
     const turns = turnsFromDom();
@@ -109,6 +152,7 @@
       title: titleFromSidebar(id),
       url: id ? `https://gemini.google.com/app/${id}` : location.href,
       sourceProvider: 'gemini',
+      attachments: attachmentsFromDom(),
     });
   }
 
@@ -243,6 +287,7 @@
         title: conv.title,
         url: `https://gemini.google.com/app/${conv.id}`,
         sourceProvider: 'gemini',
+        attachments: attachmentsFromDom(),
       }));
       await sleep(200);
     }

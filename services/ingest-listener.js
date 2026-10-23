@@ -42,6 +42,9 @@ const {
 
 const DEFAULT_PORT = 4580;
 const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB of JSON is a very large conversation
+// Matches Foundation's attachment limit exactly: a larger file could be mirrored
+// locally but never reach Foundation, which is the drift this app avoids.
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_TITLE = 500;
 
 function sendJson(res, status, body) {
@@ -53,22 +56,35 @@ function sendJson(res, status, body) {
   res.end(text);
 }
 
-function readBody(req) {
+function readRawBody(req, limit) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         reject(Object.assign(new Error('request body too large'), { statusCode: 413 }));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+function readBody(req) {
+  return readRawBody(req, MAX_BODY_BYTES).then((buffer) => buffer.toString('utf-8'));
+}
+
+/** Header-waarden zijn URL-encoded; een kapotte waarde is geen 500. */
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(String(value));
+  } catch {
+    return String(value);
+  }
 }
 
 /** Timing-safe token comparison (constant-time even on early mismatch). */
@@ -119,6 +135,105 @@ async function captureToFoundation(payload, resolveFoundationConfig) {
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }
+}
+
+/**
+ * Uploads already-fetched attachment bytes to Foundation's attachment store.
+ * Same contract as the renderer's foundation-upload-attachment IPC handler:
+ * raw body, filename in a header, metadata back. Never throws.
+ */
+async function uploadAttachmentToFoundation(bytes, { filename, mimeType }, resolveFoundationConfig) {
+  const { url, token } = resolveFoundationConfig();
+  if (!token) {
+    return { ok: false, error: 'no Foundation token found — set FOUNDATION_TOKEN, add foundation.local.json, or start Foundation' };
+  }
+  const name = (filename && String(filename).trim()) || 'attachment';
+  const type = (mimeType && String(mimeType).trim()) || 'application/octet-stream';
+  try {
+    const response = await fetch(`${url}/api/attachments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': type,
+        Authorization: `Bearer ${token}`,
+        'X-Attachment-Filename': encodeURIComponent(name),
+      },
+      body: bytes,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: body.error || `upload failed (${response.status})` };
+    }
+    return { ok: true, status: response.status, attachment: body };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
+/**
+ * Handles POST /ingest/attachment: the plugin fetched the bytes, this mirrors
+ * them into Chronicle's content-addressed blob store and uploads the same bytes
+ * to Foundation. The response carries the reference the chat then uses, so the
+ * chat payload itself never contains bytes.
+ *
+ * Idempotent by content: identical bytes reuse the blob and, once uploaded, the
+ * Foundation attachment id stored in its meta.json — a grown conversation that
+ * is re-delivered does not create a second PDF in Foundation.
+ */
+async function handleIngestAttachment({ bytes, filename, mimeType }, resolveFoundationConfig, mirrorBlob) {
+  if (!bytes || !bytes.length) {
+    return { status: 400, body: { error: 'empty attachment body' } };
+  }
+  if (bytes.length > MAX_ATTACHMENT_BYTES) {
+    return {
+      status: 413,
+      body: { error: `attachment is ${bytes.length} bytes; the limit is ${MAX_ATTACHMENT_BYTES} (25 MB)` },
+    };
+  }
+  if (typeof mirrorBlob !== 'function') {
+    return { status: 500, body: { error: 'local blob mirror unavailable' } };
+  }
+
+  const mirror = mirrorBlob(bytes, { filename, mimeType });
+  const localUrl = `chronicle-asset://blob/${mirror.hash}`;
+  // A mirror that was already uploaded keeps its Foundation id: the same bytes
+  // are the same file, regardless of which chat delivery brought them in.
+  if (mirror.foundation && mirror.foundation.id) {
+    return {
+      status: 200,
+      body: { ...mirror.foundation, hash: mirror.hash, localUrl, reused: true },
+    };
+  }
+
+  const result = await uploadAttachmentToFoundation(bytes, { filename, mimeType }, resolveFoundationConfig);
+  if (!result.ok) {
+    return { status: 502, body: { error: result.error, details: result.details, hash: mirror.hash } };
+  }
+  const stored = {
+    id: result.attachment.id,
+    filename: result.attachment.filename,
+    mimeType: result.attachment.mimeType,
+    size: result.attachment.size,
+    url: result.attachment.url,
+    at: Date.now(),
+  };
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const metaPath = path.join(mirror.dir, 'meta.json');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    fs.writeFileSync(metaPath, JSON.stringify({ ...meta, foundation: stored }));
+  } catch (err) {
+    // The upload succeeded; a lost meta only costs a duplicate upload later.
+    console.warn('[Chronicle] could not record attachment foundation id:', err.message || err);
+  }
+  return {
+    status: 201,
+    body: {
+      ...stored,
+      hash: mirror.hash,
+      localUrl,
+    },
+  };
 }
 
 async function insertChatRow(pool, item) {
@@ -203,7 +318,19 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
     const sameContent =
       (existing.contentHash || foundationContentHash(existing.content)) ===
       normalized.item.contentHash;
-    if (sameContent) {
+    // Een eerder geïngest gesprek kan later bijlagen krijgen (plugin-update of
+    // een bestand dat nu wél downloadbaar is). Alleen op content deduppen zou
+    // die bijlagen voorgoed negeren, dus nieuwe attachment-ids tellen als een
+    // echte wijziging — ook naar Foundation toe.
+    const existingIds = new Set(
+      ((existing.capture && existing.capture.attachments) || [])
+        .map((att) => att && att.id)
+        .filter(Boolean)
+    );
+    const hasNewAttachments = (normalized.item.capture.attachments || []).some(
+      (att) => !existingIds.has(att.id)
+    );
+    if (sameContent && !hasNewAttachments) {
       return { status: 200, body: { action: 'duplicate', id: existing.id } };
     }
     // Same conversation, grown or changed: update the row in place and
@@ -370,27 +497,43 @@ function notifyRenderer(getMainWindow, payload) {
  * Starts the loopback listener. Returns the http.Server (its close() shuts
  * the door cleanly).
  */
-function startIngestListener({ pool, getMainWindow, resolveFoundationConfig }) {
+function startIngestListener({ pool, getMainWindow, resolveFoundationConfig, mirrorBlob }) {
   const port = Number(process.env.CHRONICLE_INGEST_PORT) || DEFAULT_PORT;
   const token =
     process.env.CHRONICLE_INGEST_TOKEN ||
     (typeof loadIngestTokenFromFile() === 'string' ? loadIngestTokenFromFile() : null) ||
     (resolveFoundationConfig() && resolveFoundationConfig().token);
 
+  /** Both endpoints share the same door policy; returns true when allowed. */
+  const authorized = (req, res) => {
+    if (!token) {
+      sendJson(res, 500, { error: 'no ingest token configured — set CHRONICLE_INGEST_TOKEN or add foundation.local.json' });
+      return false;
+    }
+    const auth = req.headers.authorization || '';
+    const given = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!given || !tokenMatches(token, given)) {
+      sendJson(res, 401, { error: 'missing or invalid bearer token' });
+      return false;
+    }
+    return true;
+  };
+
   const server = http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/health') {
         return sendJson(res, 200, { ok: true, service: 'chronicle-ingest' });
       }
+      if (req.method === 'POST' && req.url === '/ingest/attachment') {
+        if (!authorized(req, res)) return;
+        const filename = safeDecode(req.headers['x-attachment-filename'] || '') || null;
+        const mimeType = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim();
+        const bytes = await readRawBody(req, MAX_ATTACHMENT_BYTES);
+        const result = await handleIngestAttachment({ bytes, filename, mimeType }, resolveFoundationConfig, mirrorBlob);
+        return sendJson(res, result.status, result.body);
+      }
       if (req.method === 'POST' && (req.url === '/ingest/chat' || req.url === '/api/ingest/chat')) {
-        if (!token) {
-          return sendJson(res, 500, { error: 'no ingest token configured — set CHRONICLE_INGEST_TOKEN or add foundation.local.json' });
-        }
-        const auth = req.headers.authorization || '';
-        const given = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-        if (!given || !tokenMatches(token, given)) {
-          return sendJson(res, 401, { error: 'missing or invalid bearer token' });
-        }
+        if (!authorized(req, res)) return;
         const text = await readBody(req);
         let parsed;
         try {
@@ -449,4 +592,4 @@ function loadIngestTokenFromFile() {
   return null;
 }
 
-module.exports = { startIngestListener, handleIngestChat, captureToFoundation };
+module.exports = { startIngestListener, handleIngestChat, handleIngestAttachment, captureToFoundation };

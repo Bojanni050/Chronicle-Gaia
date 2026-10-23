@@ -64,8 +64,8 @@
     return null;
   }
 
-  async function fetchConversation(uuid) {
-    const org = await resolveOrgId();
+  async function fetchConversation(uuid, orgArg) {
+    const org = orgArg || (await resolveOrgId());
     if (!org) throw new Error('no org');
     const res = await fetch(`/api/organizations/${org}/chat_conversations/${uuid}?tree=True&rendering_mode=messages&render_all_tools=true`, {
       headers: { Accept: 'application/json' },
@@ -99,9 +99,63 @@
     return branch.length ? branch : messages;
   }
 
-  function turnsFromApi(conv) {
+  /**
+   * Bijlagen per bericht. `msg.files` is de moderne vorm (file_uuid + naam +
+   * type); `msg.attachments[].extracted_content` is de tekst die Claude zelf
+   * uit het bestand haalde. De service worker probeert eerst de originele bytes
+   * via file_uuid; lukt dat niet, dan wordt de tekstextractie als .txt bewaard
+   * — met een naam die dat zegt.
+   */
+  function attachmentsFromMessages(messages, org) {
+    const out = [];
+    const byName = new Map();
+    for (const msg of messages) {
+      const extracted = new Map();
+      for (const att of msg.attachments || []) {
+        if (att && att.file_name && typeof att.extracted_content === 'string' && att.extracted_content.trim()) {
+          extracted.set(att.file_name, att.extracted_content);
+        }
+      }
+
+      for (const f of msg.files || []) {
+        if (!f || !f.file_name) continue;
+        const known = byName.get(f.file_name);
+        if (known) {
+          if (!known.text && extracted.get(f.file_name)) known.text = extracted.get(f.file_name);
+          continue;
+        }
+        const ref = window.__chronicleUI.attachmentRef({
+          providerFileId: f.file_uuid || f.file_id || null,
+          download: 'claude',
+          org,
+          filename: f.file_name,
+          mimeType: f.file_type || window.__chronicleUI.mimeFromFilename(f.file_name),
+          size: typeof f.file_size === 'number' ? f.file_size : null,
+          text: extracted.get(f.file_name) || null,
+        });
+        byName.set(f.file_name, ref);
+        out.push(ref);
+      }
+
+      // Oudere vorm zonder files[]: alleen de tekstextractie is beschikbaar.
+      for (const [name, text] of extracted) {
+        if (byName.has(name)) continue;
+        const ref = window.__chronicleUI.attachmentRef({
+          filename: name,
+          mimeType: window.__chronicleUI.mimeFromFilename(name),
+          text,
+        });
+        byName.set(name, ref);
+        out.push(ref);
+      }
+    }
+    return out;
+  }
+
+  function turnsFromApi(conv, org) {
     const turns = [];
-    for (const msg of activeMessages(conv)) {
+    const messages = activeMessages(conv);
+    for (const msg of messages) {
       let text = '';
       if (Array.isArray(msg.content)) {
         // Text-blokken zijn de kern; thinking-blokken komen er als gemarkeerde
@@ -129,13 +183,13 @@
         }
       }
       for (const f of msg.files || []) {
-        extras.push(`[Attached: ${f && f.file_name ? f.file_name : 'file'} — content not included in this export]`);
+        extras.push(`[Attached: ${f && f.file_name ? f.file_name : 'file'}]`);
       }
       text = [text || '', ...extras].filter(Boolean).join('\n\n').trim();
       if (!text) continue;
       turns.push({ role: msg.sender === 'assistant' ? 'assistant' : 'user', text });
     }
-    return turns;
+    return { turns, attachments: attachmentsFromMessages(messages, org) };
   }
 
   /**
@@ -227,12 +281,16 @@
     // gesprek i.p.v. dat van de nieuwe pagina.
     const uuid = signalUuid || conversationUuidFromUrl() || lastConversationUuidFromDom();
     let turns = null;
+    let attachments = [];
     let name = null;
     let occurredAt = null;
     if (uuid) {
       try {
-        const conv = await fetchConversation(uuid);
-        turns = turnsFromApi(conv);
+        const org = await resolveOrgId();
+        const conv = await fetchConversation(uuid, org);
+        const parsed = turnsFromApi(conv, org);
+        turns = parsed.turns;
+        attachments = parsed.attachments;
         name = typeof conv.name === 'string' && conv.name.trim() ? conv.name.trim() : null;
         occurredAt = conv.updated_at || conv.created_at || null;
       } catch {
@@ -256,6 +314,7 @@
       url: uuid ? `https://claude.ai/chat/${uuid}` : location.href,
       sourceProvider: 'claude',
       occurredAt: toEpochMs(occurredAt),
+      attachments,
     });
   }
 
@@ -278,6 +337,7 @@
 
   async function collectBulkConversations(onProgress) {
     const list = await collectAllConversations();
+    const org = await resolveOrgId();
     const out = [];
     let i = 0;
     // In batches van 3 met 200ms pauze — het patroon van
@@ -288,8 +348,9 @@
       const batch = list.slice(b, b + BATCH);
       const results = await Promise.all(batch.map(async (conv) => {
         try {
-          const full = await fetchConversation(conv.uuid);
-          const turns = turnsFromApi(full);
+          const full = await fetchConversation(conv.uuid, org);
+          const parsed = turnsFromApi(full, org);
+          const turns = parsed.turns;
           if (!turns.length) return null;
           return buildConversation({
             content: transcriptFromTurns(turns),
@@ -298,6 +359,7 @@
             url: `https://claude.ai/chat/${conv.uuid}`,
             sourceProvider: 'claude',
             occurredAt: toEpochMs(conv.updated_at || conv.created_at),
+            attachments: parsed.attachments,
           });
         } catch {
           return null; // één onbereikbaar gesprek mag de bulk niet breken

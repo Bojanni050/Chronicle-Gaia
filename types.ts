@@ -55,7 +55,22 @@ export interface CaptureData {
   occurredAt?: string;
   turns?: CaptureTurn[];
   /** Attachments already uploaded to Foundation, referenced on the chat. */
-  attachments?: Array<{ id: string; filename?: string; mimeType?: string; size?: number; url?: string }>;
+  attachments?: Array<{
+    id: string;
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
+    /** sha256 of Chronicle's local mirror (content-addressed blob). */
+    hash?: string;
+    /** Local viewer URL: chronicle-asset://blob/<hash>. */
+    localUrl?: string;
+  }>;
+  /**
+   * Files the plugin saw but could not obtain (too large, expired, blocked).
+   * Archive-only: Foundation never hears about them, so the record stays honest.
+   */
+  attachmentGaps?: Array<{ filename?: string; mimeType?: string; reason: string }>;
 }
 
 export type SourceFileStatus = 'pending' | 'sent' | 'failed';

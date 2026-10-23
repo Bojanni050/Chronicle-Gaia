@@ -121,16 +121,63 @@
     return '';
   }
 
+  /**
+   * Bijlagen uit de API-response. Twee bronnen: `metadata.attachments` (de
+   * geüploade bestanden, met naam/type/grootte) en `file-service://`-pointers in
+   * de content-parts (afbeeldingen die in een bericht zijn gezet). De bytes
+   * komen later via `/backend-api/files/{id}/download`; hier reist alleen de
+   * verwijzing mee.
+   */
+  function attachmentsFromApi(messages) {
+    const out = [];
+    const seen = new Set();
+    const add = (ref) => {
+      const key = ref.providerFileId ? 'id:' + ref.providerFileId : ref.url;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(ref);
+    };
+    for (const msg of messages) {
+      for (const att of (msg && msg.metadata && msg.metadata.attachments) || []) {
+        if (!att) continue;
+        const fileId = att.id || att.file_id;
+        if (!fileId) continue;
+        add(window.__chronicleUI.attachmentRef({
+          providerFileId: fileId,
+          download: 'chatgpt',
+          filename: att.name || att.file_name || null,
+          mimeType: att.mime_type || null,
+          size: typeof att.size === 'number' ? att.size : null,
+        }));
+      }
+      const parts = (msg && msg.content && msg.content.parts) || [];
+      for (const part of parts) {
+        if (!part || typeof part !== 'object') continue;
+        const pointer = part.asset_pointer || part.asset_pointer_url;
+        if (typeof pointer !== 'string') continue;
+        const match = pointer.match(/^file-service:\/\/(.+)$/);
+        if (!match) continue; // sediment:// (DALL·E) heeft een andere route
+        add(window.__chronicleUI.attachmentRef({
+          providerFileId: match[1],
+          download: 'chatgpt',
+          mimeType: part.mime_type || null,
+        }));
+      }
+    }
+    return out;
+  }
+
   function turnsFromApi(root) {
     const turns = [];
-    for (const msg of activeBranchMessages(root)) {
+    const branch = activeBranchMessages(root);
+    for (const msg of branch) {
       const role = msg?.author?.role;
       if (!role || role === 'system' || role === 'tool') continue;
       const text = messageText(msg);
       if (!text) continue;
       turns.push({ role: role === 'user' ? 'user' : 'assistant', text });
     }
-    return turns;
+    return { turns, attachments: attachmentsFromApi(branch) };
   }
 
   function turnsFromDom() {
@@ -146,15 +193,38 @@
     return turns;
   }
 
+  /**
+   * DOM-vangnet voor afbeeldingen als de API-read faalt: alleen http(s)-URLs
+   * (blob: is pagina-gebonden en niet door de service worker op te halen).
+   */
+  function attachmentsFromDom() {
+    const out = [];
+    const seen = new Set();
+    for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) {
+      const src = img.currentSrc || img.src;
+      if (!src || !/^https?:/i.test(src) || seen.has(src)) continue;
+      if (/avatar|profile|emoji|icon/i.test(src)) continue;
+      seen.add(src);
+      out.push(window.__chronicleUI.attachmentRef({
+        url: src,
+        download: 'direct',
+      }));
+    }
+    return out;
+  }
+
   async function collectConversation() {
     const id = conversationIdFromUrl();
     let turns = null;
+    let attachments = [];
     let title = null;
     let occurredAt = null;
     if (id) {
       try {
         const root = await fetchConversation(id);
-        turns = turnsFromApi(root);
+        const parsed = turnsFromApi(root);
+        turns = parsed.turns;
+        attachments = parsed.attachments;
         title = typeof root.title === 'string' && root.title.trim() ? root.title.trim() : null;
         occurredAt = root.update_time || root.create_time || null;
       } catch (err) {
@@ -164,6 +234,7 @@
     }
     if (!turns || !turns.length) {
       turns = turnsFromDom();
+      attachments = attachmentsFromDom();
     }
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };
@@ -175,6 +246,7 @@
       url: id ? `https://chatgpt.com/c/${id}` : location.href,
       sourceProvider: 'chatgpt',
       occurredAt,
+      attachments,
     });
   }
 
@@ -210,7 +282,8 @@
       const results = await Promise.all(batch.map(async (conv) => {
         try {
           const root = await fetchConversation(conv.id);
-          const turns = turnsFromApi(root);
+          const parsed = turnsFromApi(root);
+          const turns = parsed.turns;
           if (!turns.length) return null;
           return buildConversation({
             content: transcriptFromTurns(turns),
@@ -219,6 +292,7 @@
             url: `https://chatgpt.com/c/${conv.id}`,
             sourceProvider: 'chatgpt',
             occurredAt: conv.update_time || conv.create_time || null,
+            attachments: parsed.attachments,
           });
         } catch {
           return null; // één onbereikbaar gesprek mag de bulk niet breken

@@ -11,9 +11,18 @@
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4580';
 const QUEUE_KEY = 'chronicle_retry_queue';
 const MAX_QUEUE = 100;
+// Attachments are fetched and delivered one by one before the chat; the chat
+// payload itself carries references only. 25 MB matches Chronicle's listener
+// and Foundation's attachment store — bigger files are reported as gaps.
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_CACHE_KEY = 'chronicle_attachment_cache';
+const MAX_CACHED_ATTACHMENTS = 400;
 
 /** Velden die de listener accepteert — alles wat er niet in staat is een 422. */
-const ALLOWED_KEYS = ['content', 'turns', 'title', 'url', 'sourceProvider', 'occurredAt', 'createdAt'];
+const ALLOWED_KEYS = [
+  'content', 'turns', 'title', 'url', 'sourceProvider', 'occurredAt', 'createdAt',
+  'attachments', 'attachmentGaps',
+];
 
 /** Server-owned velden — nooit aanbieden, ook niet per ongeluk. */
 const FORBIDDEN_KEYS = [
@@ -43,6 +52,20 @@ function validateConversation(conv) {
   }
   if (conv.sourceProvider !== undefined && typeof conv.sourceProvider !== 'string') {
     return '"sourceProvider" must be a string';
+  }
+  if (conv.attachments !== undefined) {
+    if (!Array.isArray(conv.attachments)) return '"attachments" must be an array';
+    for (const att of conv.attachments) {
+      if (!att || typeof att !== 'object') return '"attachments" items must be objects';
+    }
+  }
+  if (conv.attachmentGaps !== undefined) {
+    if (!Array.isArray(conv.attachmentGaps)) return '"attachmentGaps" must be an array';
+    for (const gap of conv.attachmentGaps) {
+      if (!gap || typeof gap !== 'object' || typeof gap.reason !== 'string') {
+        return '"attachmentGaps" items must carry a reason';
+      }
+    }
   }
   return null;
 }
@@ -91,11 +114,281 @@ async function enqueue(conv) {
   });
 }
 
+// ── Attachments ──────────────────────────────────────────────────────────────
+// Bytes never travel with the chat payload: each file is downloaded here (the
+// service worker has the provider host permissions and the session cookies),
+// POSTed to Chronicle's /ingest/attachment, and the chat then references the
+// returned id. That keeps the 5 MB chat limit and Postgres free of base64.
+
+/**
+ * Naam voor een tekstextractie: de originele naam blijft staan, zodat je ziet
+ * wélk bestand het was, met een suffix dat zegt dat dit de tekst is en niet het
+ * origineel (bijv. "rapport.pdf-tekstextractie.txt").
+ */
+function extractionFilename(filename) {
+  const base = filename ? String(filename) : 'document';
+  return `${base}-tekstextractie.txt`;
+}
+
+function extensionForMime(mimeType) {
+  const map = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
+    'image/svg+xml': 'svg', 'application/pdf': 'pdf', 'text/plain': 'txt',
+  };
+  return map[String(mimeType || '').toLowerCase()] || 'bin';
+}
+
+async function chatgptAccessToken() {
+  try {
+    const res = await fetch('https://chatgpt.com/api/auth/session', {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body && body.accessToken ? body.accessToken : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDirect(ref) {
+  const res = await fetch(ref.url, { credentials: 'include', cache: 'no-store' });
+  if (!res.ok) throw new Error(`download ${res.status}`);
+  const length = Number(res.headers.get('content-length') || 0);
+  if (length > MAX_ATTACHMENT_BYTES) throw new Error('groter dan 25 MB');
+  const bytes = await res.arrayBuffer();
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('groter dan 25 MB');
+  const contentType = String(res.headers.get('content-type') || '').split(';')[0].trim();
+  // Een bron die 'pdf' in plaats van 'application/pdf' zegt is geen mime-type;
+  // de response-header is dan betrouwbaarder.
+  const refMime = String(ref.mimeType || '').includes('/') ? ref.mimeType : null;
+  return {
+    bytes,
+    filename: ref.filename || null,
+    mimeType: refMime || contentType || null,
+  };
+}
+
+async function fetchChatGptFile(ref) {
+  const token = await chatgptAccessToken();
+  const res = await fetch(
+    `https://chatgpt.com/backend-api/files/${encodeURIComponent(ref.providerFileId)}/download`,
+    {
+      headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+      cache: 'no-store',
+    }
+  );
+  if (!res.ok) throw new Error(`chatgpt download ${res.status}`);
+  const body = await res.json().catch(() => null);
+  const url = body && (body.download_url || body.url);
+  if (!url) throw new Error('chatgpt gaf geen download-url');
+  return fetchDirect({ url, filename: ref.filename, mimeType: ref.mimeType });
+}
+
+/**
+ * Claude's webclient kent geen gedocumenteerde downloadroute; deze kandidaten
+ * zijn de paden die de UI zelf gebruikt. Een HTML-antwoord is een pagina, geen
+ * bestand — dat telt als mislukking, zodat de tekstextractie de kans krijgt.
+ */
+async function fetchClaudeFile(ref) {
+  if (!ref.org) throw new Error('claude org-id ontbreekt');
+  const base = `https://claude.ai/api/organizations/${ref.org}/files/${encodeURIComponent(ref.providerFileId)}`;
+  const candidates = [`${base}/contents`, `${base}/download`, `${base}/preview`];
+  let lastError = 'claude-bestand niet downloadbaar';
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) {
+        lastError = `claude download ${res.status}`;
+        continue;
+      }
+      const contentType = String(res.headers.get('content-type') || '').split(';')[0].trim();
+      if (/text\/html/i.test(contentType)) {
+        lastError = 'claude gaf een pagina in plaats van het bestand';
+        continue;
+      }
+      const bytes = await res.arrayBuffer();
+      if (!bytes.byteLength) {
+        lastError = 'claude gaf een leeg bestand';
+        continue;
+      }
+      if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('groter dan 25 MB');
+      return {
+        bytes,
+        filename: ref.filename || null,
+        mimeType: ref.mimeType || contentType || null,
+      };
+    } catch (err) {
+      if (/groter dan 25 MB/.test(String(err && err.message))) throw err;
+      lastError = String((err && err.message) || err);
+    }
+  }
+  throw new Error(lastError);
+}
+
+function textExtraction(ref) {
+  return {
+    bytes: new TextEncoder().encode(String(ref.text)),
+    filename: extractionFilename(ref.filename),
+    mimeType: 'text/plain',
+  };
+}
+
+/**
+ * Haalt de bytes voor één referentie op. De originele bytes gaan vóór: alleen
+ * als de download écht niet lukt, valt een Claude-bijlage terug op de
+ * tekstextractie die de API al meegaf (als .txt, met een naam die dat zegt).
+ */
+async function fetchAttachment(ref) {
+  if (ref.download === 'chatgpt' && ref.providerFileId) {
+    return fetchChatGptFile(ref);
+  }
+  if (ref.download === 'claude' && ref.providerFileId) {
+    try {
+      return await fetchClaudeFile(ref);
+    } catch (err) {
+      if (ref.text) return textExtraction(ref);
+      throw err;
+    }
+  }
+  if (ref.url) {
+    try {
+      return await fetchDirect(ref);
+    } catch (err) {
+      if (ref.text) return textExtraction(ref);
+      throw err;
+    }
+  }
+  if (ref.text) return textExtraction(ref);
+  throw new Error('geen downloadroute voor deze bijlage');
+}
+
+function attachmentCacheKey(ref) {
+  if (ref.providerFileId) return 'id:' + ref.providerFileId;
+  if (ref.url) return 'url:' + ref.url;
+  if (ref.text) return 'text:' + (ref.filename || '') + ':' + ref.text.length;
+  return null;
+}
+
+async function getCachedAttachment(ref) {
+  const key = attachmentCacheKey(ref);
+  if (!key) return null;
+  const data = await chrome.storage.local.get(ATTACHMENT_CACHE_KEY);
+  const cache = data[ATTACHMENT_CACHE_KEY] || {};
+  return cache[key] || null;
+}
+
+async function cacheAttachment(ref, attachment) {
+  const key = attachmentCacheKey(ref);
+  if (!key) return;
+  // Een tekstextractie is de tweedekeuze: niet cachen onder het file-id, zodat
+  // een volgende levering het origineel opnieuw probeert (netwerk kan terug zijn).
+  if (ref.providerFileId && /-tekstextractie\.txt$/i.test(String(attachment.filename || ''))) return;
+  const data = await chrome.storage.local.get(ATTACHMENT_CACHE_KEY);
+  const cache = data[ATTACHMENT_CACHE_KEY] || {};
+  cache[key] = attachment;
+  // Bounded: drop the oldest insertions (object key order is insertion order).
+  const keys = Object.keys(cache);
+  for (const stale of keys.slice(0, Math.max(0, keys.length - MAX_CACHED_ATTACHMENTS))) {
+    delete cache[stale];
+  }
+  await chrome.storage.local.set({ [ATTACHMENT_CACHE_KEY]: cache });
+}
+
+/** POST de bytes naar Chronicle; die spiegelt lokaal en uploadt naar Foundation. */
+async function uploadAttachment({ bytes, filename, mimeType }, { baseUrl, token }) {
+  const name = filename || `bijlage.${extensionForMime(mimeType)}`;
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/ingest/attachment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': mimeType || 'application/octet-stream',
+        Authorization: `Bearer ${token}`,
+        'X-Attachment-Filename': encodeURIComponent(name),
+      },
+      body: bytes,
+    });
+  } catch (err) {
+    return { ok: false, error: 'Chronicle niet bereikbaar — bijlage niet opgeslagen' };
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, error: body.error || `bijlage-upload mislukt (${response.status})` };
+  }
+  return { ok: true, body };
+}
+
+/**
+ * Vervangt de referenties door wat Chronicle teruggeeft. Wat niet lukt wordt
+ * een gap op de chat — eerlijk vastgelegd, nooit naar Foundation gestuurd.
+ */
+async function resolveAttachments(conv, config) {
+  const refs = Array.isArray(conv.attachments) ? conv.attachments : [];
+  const gaps = Array.isArray(conv.attachmentGaps) ? conv.attachmentGaps.slice() : [];
+  if (!refs.length) return conv;
+
+  const resolved = [];
+  for (const ref of refs) {
+    try {
+      const cached = await getCachedAttachment(ref);
+      if (cached && cached.id) {
+        resolved.push(cached);
+        continue;
+      }
+      const payload = await fetchAttachment(ref);
+      const uploaded = await uploadAttachment(payload, config);
+      if (!uploaded.ok) {
+        gaps.push({ filename: ref.filename, mimeType: ref.mimeType, reason: uploaded.error });
+        continue;
+      }
+      const attachment = {
+        id: uploaded.body.id,
+        filename: uploaded.body.filename,
+        mimeType: uploaded.body.mimeType,
+        size: uploaded.body.size,
+        url: uploaded.body.url,
+        hash: uploaded.body.hash,
+        localUrl: uploaded.body.localUrl,
+      };
+      await cacheAttachment(ref, attachment);
+      resolved.push(attachment);
+    } catch (err) {
+      gaps.push({
+        filename: ref.filename,
+        mimeType: ref.mimeType,
+        reason: String((err && err.message) || err),
+      });
+    }
+  }
+
+  const out = { ...conv };
+  if (resolved.length) out.attachments = resolved;
+  else delete out.attachments;
+  if (gaps.length) out.attachmentGaps = gaps;
+  else delete out.attachmentGaps;
+  return out;
+}
+
 /** Levert één gesprek af. Transport-fout → queue; 4xx → definitief, niet queuen. */
 async function deliver(conv) {
   const { baseUrl, token } = await getConfig();
   if (!token) {
     return { ok: false, error: 'geen token ingesteld — open de opties van de extensie' };
+  }
+  // Eerst de bijlagen (bytes apart), dan de chat met alleen verwijzingen.
+  // De wachtrij bewaart het onbewerkte gesprek: een retry haalt opnieuw op en
+  // hergebruikt wat al in de cache zit. Een fout in de bijlagelaag mag de
+  // tekstlevering nooit blokkeren — dan gaat de chat zonder bijlagen door.
+  let outgoing = conv;
+  try {
+    outgoing = await resolveAttachments(conv, { baseUrl, token });
+  } catch (err) {
+    console.warn('[Chronicle] bijlagen overslaan:', String((err && err.message) || err));
+    outgoing = conv;
   }
   let response;
   try {
@@ -105,7 +398,7 @@ async function deliver(conv) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(conv),
+      body: JSON.stringify(outgoing),
     });
   } catch (err) {
     await enqueue(conv);
@@ -126,6 +419,8 @@ async function deliver(conv) {
     id: body.id,
     captured: body.captured,
     insertedNew: body.insertedNew,
+    attachmentCount: (outgoing.attachments || []).length,
+    gapCount: (outgoing.attachmentGaps || []).length,
   };
 }
 
@@ -166,7 +461,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message.type === 'chronicle-export-many') {
-      const report = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0 };
+      const report = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
       const conversations = Array.isArray(message.conversations) ? message.conversations : [];
       report.total = conversations.length;
       const progress = () => {
@@ -181,6 +476,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           continue;
         }
         const result = await deliver(conv);
+        report.gaps += result.gapCount || 0;
         if (!result.ok && result.queued) report.queued++;
         else if (!result.ok) report.failed++;
         else if (result.action === 'update') report.updated++;

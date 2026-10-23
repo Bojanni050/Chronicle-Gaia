@@ -65,3 +65,41 @@ describe('innerTextWithCodeFences', () => {
     expect(document.body.contains(wrap)).toBe(true);
   });
 });
+
+describe('attachments in buildConversation', () => {
+  const uiFull = () => (window as any).__chronicleUI;
+
+  it('laat lege bijlagelijsten weg (payloadvorm blijft gelijk)', () => {
+    const conv = uiFull().buildConversation({
+      content: 'User: hi',
+      turns: [{ role: 'user', text: 'hi' }],
+      sourceProvider: 'claude',
+      attachments: [],
+      attachmentGaps: [],
+    });
+    expect(conv).not.toHaveProperty('attachments');
+    expect(conv).not.toHaveProperty('attachmentGaps');
+  });
+
+  it('draagt referenties en gaps mee', () => {
+    const conv = uiFull().buildConversation({
+      content: 'User: hi',
+      turns: [{ role: 'user', text: 'hi' }],
+      sourceProvider: 'chatgpt',
+      attachments: [{ providerFileId: 'file-1', download: 'chatgpt', filename: 'a.pdf' }],
+      attachmentGaps: [{ filename: 'b.pdf', reason: 'groter dan 25 MB' }],
+    });
+    expect(conv.attachments).toEqual([{ providerFileId: 'file-1', download: 'chatgpt', filename: 'a.pdf' }]);
+    expect(conv.attachmentGaps).toEqual([{ filename: 'b.pdf', reason: 'groter dan 25 MB' }]);
+  });
+
+  it('attachmentRef laat lege velden weg', () => {
+    expect(uiFull().attachmentRef({ providerFileId: 'x', filename: '', size: null })).toEqual({ providerFileId: 'x' });
+  });
+
+  it('leidt een extensie en mime-type af', () => {
+    expect(uiFull().extensionForMime('application/pdf')).toBe('pdf');
+    expect(uiFull().mimeFromFilename('rapport.PDF')).toBe('application/pdf');
+    expect(uiFull().mimeFromFilename('raar.xyz')).toBe('application/octet-stream');
+  });
+});

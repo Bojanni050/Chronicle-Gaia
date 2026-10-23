@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Chronicle Chat Exporter",
-  "version": "0.4.0",
-  "description": "Exporteert het huidige claude.ai / chatgpt.com / gemini.google.com / chat.mistral.ai gesprek naar Chronicle (Chronicle-Gaia), dat de archiefkopie bewaart en automatisch naar Foundation's Ingestie Gateway forwardt.",
+  "version": "0.5.0",
+  "description": "Exporteert het huidige claude.ai / chatgpt.com / gemini.google.com / chat.mistral.ai gesprek naar Chronicle (Chronicle-Gaia), inclusief afbeeldingen en bestanden, dat de archiefkopie bewaart en automatisch naar Foundation's Ingestie Gateway forwardt.",
   "permissions": [
     "storage",
     "activeTab"
@@ -12,6 +12,9 @@
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://chat.mistral.ai/*",
+    "https://*.oaiusercontent.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://*.anthropic.com/*",
     "http://127.0.0.1/*"
   ],
   "background": {

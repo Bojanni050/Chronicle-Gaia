@@ -1,10 +1,24 @@
 
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, Menu, nativeImage, protocol } = require('electron');
 const { startIngestListener } = require('./services/ingest-listener');
 const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
 const { parse: parseConnectionString } = require('pg-connection-string');
+
+// ── Chronicle's own asset scheme ─────────────────────────────────────────────
+// Attachments and source blobs live on disk (content-addressed by sha256). The
+// renderer needs to show them, but base64 in Postgres would bloat every row and
+// file:// is blocked from an app origin. A privileged custom scheme gives the
+// viewer a normal URL — `chronicle-asset://blob/<sha256>` — without a copy in
+// the database. Declared before app.ready, handled further down.
+const ASSET_SCHEME = 'chronicle-asset';
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
 
 // ── User data location ───────────────────────────────────────────────────────
 // Electron's default userData is %APPDATA% (Roaming) on Windows, the profile
@@ -173,7 +187,7 @@ function putLocalBlob(buffer, { filename, mimeType } = {}) {
   const dir = path.join(chronicleBlobsDir(), hash.slice(0, 2), hash);
   const metaPath = path.join(dir, 'meta.json');
   if (fs.existsSync(metaPath)) {
-    return { ...JSON.parse(fs.readFileSync(metaPath, 'utf8')), reused: true };
+    return { ...JSON.parse(fs.readFileSync(metaPath, 'utf8')), dir, reused: true };
   }
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'content'), buffer, { flag: 'wx' });
@@ -185,7 +199,46 @@ function putLocalBlob(buffer, { filename, mimeType } = {}) {
     createdAt: new Date().toISOString(),
   };
   fs.writeFileSync(metaPath, JSON.stringify(meta));
-  return { ...meta, reused: false };
+  return { ...meta, dir, reused: false };
+}
+
+/** Serves a mirrored blob by hash; the viewer and download links use this. */
+function registerAssetProtocol() {
+  protocol.handle(ASSET_SCHEME, async (request) => {
+    try {
+      const hash = new URL(request.url).pathname.replace(/^\/+/, '');
+      if (!/^[0-9a-f]{64}$/i.test(hash)) {
+        return new Response('invalid asset id', { status: 400 });
+      }
+      const dir = path.join(chronicleBlobsDir(), hash.slice(0, 2), hash);
+      const contentPath = path.join(dir, 'content');
+      if (!fs.existsSync(contentPath)) {
+        return new Response('asset not found', { status: 404 });
+      }
+      let meta = {};
+      try {
+        meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+      } catch {
+        // meta is optional; the bytes still exist
+      }
+      const bytes = fs.readFileSync(contentPath);
+      const headers = {
+        'content-type': meta.mimeType || 'application/octet-stream',
+        'content-length': String(bytes.length),
+        'cache-control': 'public, max-age=31536000, immutable',
+      };
+      if (meta.filename) {
+        const ascii = String(meta.filename).replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'");
+        // Afbeeldingen moeten inline blijven (anders rendert <img> niet);
+        // al het andere is een download en houdt zijn eigen naam.
+        const disposition = String(meta.mimeType || '').startsWith('image/') ? 'inline' : 'attachment';
+        headers['content-disposition'] = `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(meta.filename)}`;
+      }
+      return new Response(bytes, { headers });
+    } catch (err) {
+      return new Response(`asset error: ${err.message || err}`, { status: 500 });
+    }
+  });
 }
 
 /**
@@ -968,6 +1021,12 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await initDatabase();
-  startIngestListener({ pool, getMainWindow: () => mainWindow, resolveFoundationConfig });
+  registerAssetProtocol();
+  startIngestListener({
+    pool,
+    getMainWindow: () => mainWindow,
+    resolveFoundationConfig,
+    mirrorBlob: putLocalBlob,
+  });
   createWindow();
 });

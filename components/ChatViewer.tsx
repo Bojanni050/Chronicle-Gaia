@@ -41,6 +41,70 @@ const ImageGallery: React.FC<{ assets: string[] }> = ({ assets }) => (
   </div>
 );
 
+interface ViewerAttachment {
+  id: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  localUrl?: string;
+}
+
+const formatBytes = (size?: number) => {
+  if (!size || size < 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} kB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/**
+ * Niet-afbeeldingsbijlagen (pdf's, tekstextracties, documenten). Afbeeldingen
+ * staan al in de galerij hierboven; dit is de downloadbare rest. Wat niet
+ * opgehaald kon worden staat er expliciet bij — een chat die doet alsof hij
+ * een bestand heeft dat er niet is, is erger dan een zichtbare gap.
+ */
+const AttachmentList: React.FC<{
+  attachments: ViewerAttachment[];
+  gaps?: Array<{ filename?: string; reason: string }>;
+}> = ({ attachments, gaps = [] }) => {
+  const files = attachments.filter((att) => !(att.mimeType || '').toLowerCase().startsWith('image/'));
+  if (!files.length && !gaps.length) return null;
+  return (
+    <div className="mt-12 pt-8 border-t border-sandstone/20">
+      <h4 className="text-[10px] font-black text-moss-brown uppercase tracking-widest mb-6">Bijlagen</h4>
+      <ul className="space-y-2">
+        {files.map((att) => (
+          <li key={att.id} className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-stone-800 border border-sandstone/30 dark:border-stone-700">
+            <span className="shrink-0 px-2 py-1 rounded-md bg-sandstone/10 dark:bg-stone-700 text-[10px] font-black uppercase tracking-widest text-moss-brown dark:text-stone-300">
+              {(att.filename || '').split('.').pop()?.slice(0, 4) || 'file'}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="truncate text-sm text-earth-dark dark:text-stone-200">{att.filename || att.id}</p>
+              <p className="text-[10px] uppercase tracking-widest text-moss-brown/70 dark:text-stone-400">
+                {att.mimeType || 'onbekend type'}{att.size ? ` • ${formatBytes(att.size)}` : ''}
+              </p>
+            </div>
+            {att.localUrl && (
+              <a href={att.localUrl} download={att.filename || att.id} className="shrink-0 px-3 py-2 rounded-lg bg-sage-green text-white text-[10px] font-black uppercase tracking-widest">
+                Download
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+      {gaps.length > 0 && (
+        <div className="mt-4 space-y-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">Niet opgehaald</p>
+          {gaps.map((gap, idx) => (
+            <p key={idx} className="text-[11px] text-moss-brown dark:text-stone-400">
+              {gap.filename || 'onbenoemd bestand'} — {gap.reason}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Icon components
 const EditIcon = ({ className = "h-4 w-4" }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -356,6 +420,10 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                           <ImageGallery assets={chat.assets} />
                         </div>
                       )}
+                      <AttachmentList
+                        attachments={chat.capture?.attachments || []}
+                        gaps={chat.capture?.attachmentGaps}
+                      />
                     </>
                   )}
               </div>
