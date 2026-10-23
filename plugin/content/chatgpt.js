@@ -122,10 +122,89 @@
   }
 
   /**
+   * Bestands-id uit een CDN-url. ChatGPT serveert afbeeldingen als
+   * `/backend-api/estuary/content?id=file_…` of als
+   * `https://files.oaiusercontent.com/file-…`; beide bevatten het id. Nodig om
+   * een gegenereerde foto aan de API-verwijzing te koppelen.
+   */
+  function fileIdFromUrl(url) {
+    if (typeof url !== 'string') return null;
+    const fromQuery = url.match(/[?&]id=(file[-_][A-Za-z0-9]+)/);
+    if (fromQuery) return fromQuery[1];
+    const fromPath = url.match(/(file[-_][A-Za-z0-9]{8,})/);
+    return fromPath ? fromPath[1] : null;
+  }
+
+  /**
+   * De afbeeldingen die de pagina toont, met CDN-url en id. Gegenereerde foto's
+   * (DALL·E/GPT-image) staan in de API als `sediment://`-pointer zonder
+   * download-url; de `<img>` in het bericht is dan de enige route naar de bytes.
+   * Alleen http(s): `blob:` is pagina-gebonden en niet door de service worker
+   * op te halen.
+   */
+  function domImageRefs() {
+    const out = [];
+    const seen = new Set();
+    for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) {
+      const src = img.currentSrc || img.src;
+      if (!src || !/^https?:/i.test(src) || seen.has(src)) continue;
+      if (/avatar|profile|emoji|icon|logo/i.test(src)) continue;
+      if (img.naturalWidth && img.naturalWidth < 64) continue;
+      seen.add(src);
+      const alt = String(img.getAttribute('alt') || '').trim();
+      out.push({
+        src,
+        fileId: fileIdFromUrl(src),
+        filename: alt && alt.length < 60 ? alt : null,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Koppelt de API-verwijzingen aan wat de pagina toont: een verwijzing zonder
+   * url krijgt de CDN-url van de afbeelding met hetzelfde id, en een afbeelding
+   * die geen enkele verwijzing heeft (gegenereerd, niet in `metadata`) wordt
+   * toegevoegd. Zonder dit kwam een gegenereerde foto nooit mee: de pointer is
+   * `sediment://` en het download-endpoint kent die opslag niet.
+   */
+  function withDomImages(attachments, images) {
+    if (!images.length) return attachments;
+    const byId = new Map();
+    for (const image of images) if (image.fileId) byId.set(image.fileId, image);
+
+    const out = attachments.map((ref) => {
+      if (ref.url || !ref.providerFileId) return ref;
+      const match = byId.get(ref.providerFileId);
+      if (!match) return ref;
+      const next = { ...ref, url: match.src };
+      if (!next.filename && match.filename) next.filename = match.filename;
+      return next;
+    });
+
+    const claimed = new Set(out.map((ref) => ref.providerFileId).filter(Boolean));
+    const usedUrls = new Set(out.map((ref) => ref.url).filter(Boolean));
+    for (const image of images) {
+      if (!image.fileId || claimed.has(image.fileId) || usedUrls.has(image.src)) continue;
+      claimed.add(image.fileId);
+      usedUrls.add(image.src);
+      out.push(window.__chronicleUI.attachmentRef({
+        providerFileId: image.fileId,
+        url: image.src,
+        download: 'chatgpt',
+        filename: image.filename,
+        mimeType: 'image/png',
+      }));
+    }
+    return out;
+  }
+
+  /**
    * Bijlagen uit de API-response. Twee bronnen: `metadata.attachments` (de
-   * geüploade bestanden, met naam/type/grootte) en `file-service://`-pointers in
-   * de content-parts (afbeeldingen die in een bericht zijn gezet). De bytes
-   * komen later via `/backend-api/files/{id}/download`; hier reist alleen de
+   * geüploade bestanden, met naam/type/grootte) en pointers in de content-parts
+   * (`file-service://` voor wat in een bericht is gezet, `sediment://` voor
+   * gegenereerde afbeeldingen). De bytes komen later via
+   * `/backend-api/files/{id}/download` of de CDN-url; hier reist alleen de
    * verwijzing mee.
    */
   function attachmentsFromApi(messages) {
@@ -155,11 +234,15 @@
         if (!part || typeof part !== 'object') continue;
         const pointer = part.asset_pointer || part.asset_pointer_url;
         if (typeof pointer !== 'string') continue;
-        const match = pointer.match(/^file-service:\/\/(.+)$/);
-        if (!match) continue; // sediment:// (DALL·E) heeft een andere route
+        // file-service:// = geüpload of in het bericht gezet; sediment:// =
+        // gegenereerd (DALL·E/GPT-image). Beide verwijzen naar een file-id; de
+        // sediment-variant heeft geen download-endpoint, daar vult de DOM de url.
+        const match = pointer.match(/^(?:file-service|sediment):\/\/(.+)$/);
+        if (!match) continue;
         add(window.__chronicleUI.attachmentRef({
           providerFileId: match[1],
           download: 'chatgpt',
+          filename: match[1].startsWith('file_') ? `chatgpt-afbeelding-${match[1].slice(-8)}` : null,
           mimeType: part.mime_type || null,
         }));
       }
@@ -198,19 +281,14 @@
    * (blob: is pagina-gebonden en niet door de service worker op te halen).
    */
   function attachmentsFromDom() {
-    const out = [];
-    const seen = new Set();
-    for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) {
-      const src = img.currentSrc || img.src;
-      if (!src || !/^https?:/i.test(src) || seen.has(src)) continue;
-      if (/avatar|profile|emoji|icon/i.test(src)) continue;
-      seen.add(src);
-      out.push(window.__chronicleUI.attachmentRef({
-        url: src,
-        download: 'direct',
-      }));
-    }
-    return out;
+    return domImageRefs().map((image) =>
+      window.__chronicleUI.attachmentRef({
+        url: image.src,
+        providerFileId: image.fileId,
+        download: image.fileId ? 'chatgpt' : 'direct',
+        filename: image.filename,
+      })
+    );
   }
 
   async function collectConversation() {
@@ -224,7 +302,9 @@
         const root = await fetchConversation(id);
         const parsed = turnsFromApi(root);
         turns = parsed.turns;
-        attachments = parsed.attachments;
+        // De pagina toont de gegenereerde foto's; de API geeft daar alleen een
+        // sediment-pointer voor. Koppel ze hier, ook als de API-read slaagde.
+        attachments = withDomImages(parsed.attachments, domImageRefs());
         title = typeof root.title === 'string' && root.title.trim() ? root.title.trim() : null;
         occurredAt = root.update_time || root.create_time || null;
       } catch (err) {

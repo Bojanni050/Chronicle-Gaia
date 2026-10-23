@@ -172,20 +172,36 @@ async function fetchDirect(ref) {
 }
 
 async function fetchChatGptFile(ref) {
-  const token = await chatgptAccessToken();
-  const res = await fetch(
-    `https://chatgpt.com/backend-api/files/${encodeURIComponent(ref.providerFileId)}/download`,
-    {
-      headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      credentials: 'include',
-      cache: 'no-store',
+  const id = ref.providerFileId;
+  // Gegenereerde foto's (sediment://) hebben geen download-endpoint; de CDN-url
+  // uit de pagina is dan de enige route. Een id met underscore is zo'n
+  // sediment-bestand, dus die proberen we niet eerst via de API.
+  const sediment = /^file_/.test(String(id));
+  let lastError = null;
+  if (!sediment) {
+    try {
+      const token = await chatgptAccessToken();
+      const res = await fetch(
+        `https://chatgpt.com/backend-api/files/${encodeURIComponent(id)}/download`,
+        {
+          headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: 'include',
+          cache: 'no-store',
+        }
+      );
+      if (!res.ok) throw new Error(`chatgpt download ${res.status}`);
+      const body = await res.json().catch(() => null);
+      const url = body && (body.download_url || body.url);
+      if (!url) throw new Error('chatgpt gaf geen download-url');
+      return await fetchDirect({ url, filename: ref.filename, mimeType: ref.mimeType });
+    } catch (err) {
+      lastError = err;
     }
-  );
-  if (!res.ok) throw new Error(`chatgpt download ${res.status}`);
-  const body = await res.json().catch(() => null);
-  const url = body && (body.download_url || body.url);
-  if (!url) throw new Error('chatgpt gaf geen download-url');
-  return fetchDirect({ url, filename: ref.filename, mimeType: ref.mimeType });
+  }
+  if (ref.url) {
+    return fetchDirect({ url: ref.url, filename: ref.filename, mimeType: ref.mimeType });
+  }
+  throw lastError || new Error('geen download-url voor deze chatgpt-afbeelding');
 }
 
 /**
@@ -303,7 +319,11 @@ async function cacheAttachment(ref, attachment) {
 
 /** POST de bytes naar Chronicle; die spiegelt lokaal en uploadt naar Foundation. */
 async function uploadAttachment({ bytes, filename, mimeType }, { baseUrl, token }) {
-  const name = filename || `bijlage.${extensionForMime(mimeType)}`;
+  // Naam zonder extensie (bijv. een gegenereerde foto) krijgt er één bij, anders
+  // staat er een bestand zonder type in de lijst en in de download.
+  let name = filename ? String(filename) : '';
+  if (!name) name = `bijlage.${extensionForMime(mimeType)}`;
+  else if (!/\.[a-z0-9]{2,5}$/i.test(name)) name = `${name}.${extensionForMime(mimeType)}`;
   let response;
   try {
     response = await fetch(`${baseUrl}/ingest/attachment`, {
@@ -368,8 +388,19 @@ async function resolveAttachments(conv, config) {
     }
   }
 
+  // Twee referenties kunnen op dezelfde bytes uitkomen (bijv. dezelfde foto als
+  // API-pointer én als DOM-url). Chronicle dedupliceert de blob, maar de chat
+  // zou het bestand dan twee keer in de lijst hebben — dus dedupe op id.
+  const deduped = [];
+  const seenIds = new Set();
+  for (const attachment of resolved) {
+    if (attachment.id && seenIds.has(attachment.id)) continue;
+    if (attachment.id) seenIds.add(attachment.id);
+    deduped.push(attachment);
+  }
+
   const out = { ...conv };
-  if (resolved.length) out.attachments = resolved;
+  if (deduped.length) out.attachments = deduped;
   else delete out.attachments;
   if (gaps.length) out.attachmentGaps = gaps;
   else delete out.attachmentGaps;
