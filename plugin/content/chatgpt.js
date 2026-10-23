@@ -148,17 +148,23 @@
    * download-url; de `<img>` in het bericht is dan de enige route naar de bytes.
    * `blob:` is pagina-gebonden en niet door de service worker op te halen; die
    * wordt hier wél gemeld (`blob: true`) en later in de pagina zelf uitgelezen.
+   *
+   * Gezocht wordt in twee rondes: binnen een berichtcontainer (waar geüploade
+   * afbeeldingen staan) én in `main` voor `blob:`-afbeeldingen. Die tweede ronde
+   * is nodig omdat een gegenereerde foto in het `tool`-bericht hangt en dat blok
+   * geen `data-message-author-role` heeft — met alleen de eerste ronde bleef de
+   * verwijzing zonder url achter (gemeten: gap "geen download-url").
    */
   function domImageRefs() {
     const out = [];
     const seen = new Set();
-    for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) {
+    const collect = (img) => {
       const src = img.currentSrc || img.src;
-      if (!src || seen.has(src)) continue;
+      if (!src || seen.has(src)) return;
       const blob = /^blob:/i.test(src);
-      if (!blob && !/^https?:/i.test(src)) continue;
-      if (/avatar|profile|emoji|icon|logo/i.test(src)) continue;
-      if (img.naturalWidth && img.naturalWidth < 64) continue;
+      if (!blob && !/^https?:/i.test(src)) return;
+      if (/avatar|profile|emoji|icon|logo/i.test(src)) return;
+      if (img.naturalWidth && img.naturalWidth < 64) return;
       seen.add(src);
       const alt = String(img.getAttribute('alt') || '').trim();
       out.push({
@@ -167,6 +173,11 @@
         fileId: blob ? null : fileIdFromUrl(src),
         filename: alt && alt.length < 60 ? alt : null,
       });
+    };
+    for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) collect(img);
+    for (const img of document.querySelectorAll('main img[src]')) {
+      if (!/^blob:/i.test(img.currentSrc || img.src)) continue;
+      collect(img);
     }
     return out;
   }
@@ -199,7 +210,11 @@
   async function inlineBlobImages(attachments) {
     const pending = attachments.filter((ref) => ref && !ref.url && !ref.dataBase64);
     const blobs = domImageRefs().filter((image) => image.blob);
-    if (!pending.length || !blobs.length) return attachments;
+    if (!pending.length) return attachments;
+    if (!blobs.length) {
+      console.info('[Chronicle] geen blob-afbeelding in de pagina voor', pending.length, 'verwijzing(en)');
+      return attachments;
+    }
     const used = new Set();
     for (const ref of pending) {
       let match = null;
@@ -224,6 +239,16 @@
       ref.dataBase64 = match.bytes.base64;
       ref.mimeType = ref.mimeType || match.bytes.mimeType;
       ref.size = match.bytes.size;
+    }
+    // Diagnose: welke verwijzing bleef zonder bytes achter, en waarom.
+    const unmatched = pending.filter((ref) => !ref.dataBase64);
+    if (unmatched.length) {
+      console.info(
+        '[Chronicle] geen passende blob voor',
+        unmatched.map((ref) => `${ref.filename || ref.providerFileId} (${ref.size ?? '?'} bytes)`).join(', '),
+        '— paginablobs:',
+        blobs.map((image) => (image.bytes ? image.bytes.size : '?')).join(', ')
+      );
     }
     return attachments;
   }
