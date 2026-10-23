@@ -267,14 +267,42 @@
     if (left.length && left.length === free.length) {
       left.forEach((ref, index) => take(ref, free[index], 'volgorde'));
     }
+    // 4. Evenveel onopgeloste verwijzingen als vrije blobs: dan is volgorde het
+    //    enige signaal dat over is, ook voor een afbeelding die niet als
+    //    gegenereerd herkend is. Beter de juiste bytes met een kleine kans op
+    //    verwisseling dan een lege bijlage.
+    const rest = pending.filter((ref) => !ref.dataBase64);
+    const stillFree = usable.filter((image) => !used.has(image.src));
+    if (rest.length && rest.length === stillFree.length) {
+      rest.forEach((ref, index) => take(ref, stillFree[index], 'volgorde-alle'));
+    }
 
     const unmatched = pending.filter((ref) => !ref.dataBase64);
     if (unmatched.length) {
       console.info(
         '[Chronicle] geen passende blob voor',
-        unmatched.map((ref) => `${ref.filename || ref.providerFileId} (${ref.size ?? '?'} bytes)`).join(', '),
+        unmatched
+          .map(
+            (ref) =>
+              `${ref.filename || ref.providerFileId} (${ref.size ?? '?'} bytes, ` +
+              `${ref.width || '?'}×${ref.height || '?'}, ${ref.pointerKind || '?'}${
+                ref.generated ? ', gegenereerd' : ''
+              })`
+          )
+          .join(', '),
         '— paginablobs:',
-        blobs.map((image) => (image.bytes ? image.bytes.size : '?')).join(', ')
+        blobs
+          .map((image) =>
+            image.bytes
+              ? `${image.bytes.size} bytes ${image.naturalWidth || '?'}×${image.naturalHeight || '?'}`
+              : 'onleesbaar'
+          )
+          .join(', ')
+      );
+    } else {
+      console.info(
+        '[Chronicle] blobkoppeling:',
+        pending.map((ref) => `${ref.filename || ref.providerFileId} via ${ref.matchedBy || '?'}`).join(' | ')
       );
     }
     return attachments;
@@ -370,7 +398,12 @@
       // uploads buiten de volgorde-fallback.
       if (typeof part.width === 'number') ref.width = part.width;
       if (typeof part.height === 'number') ref.height = part.height;
-      if (pointer.startsWith('sediment://')) ref.generated = true;
+      // Niet elke gegenereerde foto heeft een `sediment://`-pointer; bij de
+      // DALL·E-route staat er soms `file-service://` terwijl de titel wél uit
+      // `metadata.image_gen_title` komt (gemeten: 6 foto's, alle zes zo). Zonder
+      // deze tweede signaalbron valt de volgorde-fallback stil.
+      if (pointer.startsWith('sediment://') || genTitle) ref.generated = true;
+      ref.pointerKind = pointer.startsWith('sediment://') ? 'sediment' : 'file-service';
       out.push(ref);
     }
     return out;
