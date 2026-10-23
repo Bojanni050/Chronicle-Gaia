@@ -33,6 +33,13 @@ export interface IngestAttachment {
   hash?: string;
   /** Local viewer URL for the mirror (chronicle-asset://<hash>). */
   localUrl?: string;
+  /**
+   * Aantal beurten dat aan deze bijlage voorafging. De plugin zet ook een
+   * `[Bijlage: naam]`-marker in het transcript; de viewer gebruikt die marker
+   * (en dit veld als reserve) om de bijlage in het gesprek te zetten in plaats
+   * van onderaan.
+   */
+  afterTurn?: number;
 }
 
 /**
@@ -210,6 +217,9 @@ function cleanAttachments(raw: unknown): IngestAttachment[] {
     if (hash && /^[0-9a-f]{64}$/i.test(hash)) entry.hash = hash.toLowerCase();
     const localUrl = cleanString((att as any).localUrl);
     if (localUrl) entry.localUrl = localUrl;
+    // Positie in het gesprek: de viewer zet de bijlage achter deze beurt.
+    const afterTurn = Number((att as any).afterTurn);
+    if (Number.isInteger(afterTurn) && afterTurn >= 0) entry.afterTurn = afterTurn;
     out.push(entry);
   }
   return out;

@@ -103,3 +103,39 @@ describe('attachments in buildConversation', () => {
     expect(uiFull().mimeFromFilename('raar.xyz')).toBe('application/octet-stream');
   });
 });
+
+describe('transcriptFromTurns met bijlagen', () => {
+  const transcript = () => (window as any).__chronicleUI.transcriptFromTurns as (
+    turns: Array<{ role: string; text: string }>,
+    attachments?: Array<Record<string, unknown>>
+  ) => string;
+
+  const turns = [
+    { role: 'user', text: 'maak een foto van een kat' },
+    { role: 'assistant', text: 'hier is hij' },
+    { role: 'user', text: 'mooi' },
+  ];
+
+  it('laat de tekst ongemoeid zonder bijlagen', () => {
+    expect(transcript()(turns)).toBe(
+      'User: maak een foto van een kat\n\nAssistant: hier is hij\n\nUser: mooi'
+    );
+  });
+
+  it('zet de marker achter de beurt waarin de foto ontstond', () => {
+    const out = transcript()(turns, [
+      { filename: 'Winterkat', afterTurn: 2 },
+    ]);
+    expect(out).toBe(
+      'User: maak een foto van een kat\n\nAssistant: hier is hij\n\n[Bijlage: Winterkat]\n\nUser: mooi'
+    );
+  });
+
+  it('negeert bijlagen zonder positie of zonder naam', () => {
+    const out = transcript()(turns, [
+      { filename: 'zonder-positie' },
+      { afterTurn: 1 },
+    ]);
+    expect(out).not.toContain('[Bijlage:');
+  });
+});

@@ -247,6 +247,11 @@
     if (src.url) ref.url = String(src.url);
     if (src.download) ref.download = String(src.download);
     if (src.org) ref.org = String(src.org);
+    // Na welke beurt hoort deze bijlage? De viewer zet hem daar neer; zonder
+    // dit staat alles onderaan de chat in plaats van in het gesprek.
+    if (typeof src.afterTurn === 'number' && Number.isFinite(src.afterTurn) && src.afterTurn >= 0) {
+      ref.afterTurn = Math.floor(src.afterTurn);
+    }
     // Tekstextracties zijn fallback-bytes voor de service worker en belanden
     // nooit in de chatpayload. Ze gaan wél mee in de retry-queue (storage),
     // dus begrensd: een enorme PDF mag het queue-quotum niet opeten.
@@ -316,11 +321,32 @@
     return map[ext] || 'application/octet-stream';
   }
 
-  /** "User: …" / "Assistant: …" — zelfde transcriptvorm als sourceParsers.ts. */
-  function transcriptFromTurns(turns) {
-    return turns
-      .map((t) => `${t.role === 'assistant' ? 'Assistant' : 'User'}: ${t.text}`)
-      .join('\n\n');
+  /**
+   * "User: …" / "Assistant: …" — zelfde transcriptvorm als sourceParsers.ts.
+   *
+   * Een bijlage met `afterTurn` wordt als marker (`[Bijlage: naam]`) achter die
+   * beurt gezet, zodat de positie in de tekst zelf vastligt en niet afhangt van
+   * het opnieuw splitsen van de tekst in de viewer. De marker is ook leesbaar
+   * voor Foundation en in exports.
+   */
+  function transcriptFromTurns(turns, attachments) {
+    const byTurn = new Map();
+    for (const ref of Array.isArray(attachments) ? attachments : []) {
+      if (!ref || typeof ref.afterTurn !== 'number' || !ref.filename) continue;
+      if (!byTurn.has(ref.afterTurn)) byTurn.set(ref.afterTurn, []);
+      byTurn.get(ref.afterTurn).push(ref);
+    }
+    const markers = (n) =>
+      (byTurn.get(n) || []).map((ref) => `[Bijlage: ${ref.filename}]`).join('\n');
+    const blocks = [];
+    const head = markers(0);
+    if (head) blocks.push(head);
+    turns.forEach((t, index) => {
+      const line = `${t.role === 'assistant' ? 'Assistant' : 'User'}: ${t.text}`;
+      const tail = markers(index + 1);
+      blocks.push(tail ? `${line}\n\n${tail}` : line);
+    });
+    return blocks.join('\n\n');
   }
 
   /**

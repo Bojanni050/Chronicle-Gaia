@@ -292,76 +292,81 @@
   }
 
   /**
-   * Bijlagen uit de API-response. Twee bronnen: `metadata.attachments` (de
+   * Bijlagen uit één API-bericht. Twee bronnen: `metadata.attachments` (de
    * geüploade bestanden, met naam/type/grootte) en pointers in de content-parts
    * (`file-service://` voor wat in een bericht is gezet, `sediment://` voor
    * gegenereerde afbeeldingen). De bytes komen later via
    * `/backend-api/files/{id}/download` of de CDN-url; hier reist alleen de
    * verwijzing mee.
    */
-  function attachmentsFromApi(messages) {
+  function attachmentsFromMessage(msg) {
     const out = [];
-    const seen = new Set();
-    const add = (ref) => {
-      const key = ref.providerFileId ? 'id:' + ref.providerFileId : ref.url;
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      out.push(ref);
-    };
-    for (const msg of messages) {
-      for (const att of (msg && msg.metadata && msg.metadata.attachments) || []) {
-        if (!att) continue;
-        const fileId = att.id || att.file_id;
-        if (!fileId) continue;
-        add(window.__chronicleUI.attachmentRef({
-          providerFileId: fileId,
-          download: 'chatgpt',
-          filename: att.name || att.file_name || null,
-          mimeType: att.mime_type || null,
-          size: typeof att.size === 'number' ? att.size : null,
-        }));
-      }
-      const parts = (msg && msg.content && msg.content.parts) || [];
-      for (const part of parts) {
-        if (!part || typeof part !== 'object') continue;
-        const pointer = part.asset_pointer || part.asset_pointer_url;
-        if (typeof pointer !== 'string') continue;
-        // file-service:// = geüpload of in het bericht gezet; sediment:// =
-        // gegenereerd (DALL·E/GPT-image). Beide verwijzen naar een file-id; de
-        // sediment-variant heeft geen download-endpoint, daar vult de DOM de url.
-        const match = pointer.match(/^(?:file-service|sediment):\/\/(.+)$/);
-        if (!match) continue;
-        const generated = String(match[1]).startsWith('file_');
-        // De titel die ChatGPT zelf aan de generatie gaf ("Winterkat") is een
-        // betere bestandsnaam dan een id.
-        const genTitle = (msg.metadata && msg.metadata.image_gen_title) || null;
-        add(window.__chronicleUI.attachmentRef({
-          providerFileId: match[1],
-          download: 'chatgpt',
-          filename: genTitle
-            ? String(genTitle).trim()
-            : generated
-              ? `chatgpt-afbeelding-${match[1].slice(-8)}`
-              : null,
-          mimeType: part.mime_type || null,
-          size: typeof part.size_bytes === 'number' ? part.size_bytes : null,
-        }));
-      }
+    for (const att of (msg && msg.metadata && msg.metadata.attachments) || []) {
+      if (!att) continue;
+      const fileId = att.id || att.file_id;
+      if (!fileId) continue;
+      out.push(window.__chronicleUI.attachmentRef({
+        providerFileId: fileId,
+        download: 'chatgpt',
+        filename: att.name || att.file_name || null,
+        mimeType: att.mime_type || null,
+        size: typeof att.size === 'number' ? att.size : null,
+      }));
+    }
+    const parts = (msg && msg.content && msg.content.parts) || [];
+    for (const part of parts) {
+      if (!part || typeof part !== 'object') continue;
+      const pointer = part.asset_pointer || part.asset_pointer_url;
+      if (typeof pointer !== 'string') continue;
+      // file-service:// = geüpload of in het bericht gezet; sediment:// =
+      // gegenereerd (DALL·E/GPT-image). Beide verwijzen naar een file-id; de
+      // sediment-variant heeft geen download-endpoint, daar vult de DOM de url.
+      const match = pointer.match(/^(?:file-service|sediment):\/\/(.+)$/);
+      if (!match) continue;
+      const generated = String(match[1]).startsWith('file_');
+      // De titel die ChatGPT zelf aan de generatie gaf ("Winterkat") is een
+      // betere bestandsnaam dan een id.
+      const genTitle = (msg.metadata && msg.metadata.image_gen_title) || null;
+      out.push(window.__chronicleUI.attachmentRef({
+        providerFileId: match[1],
+        download: 'chatgpt',
+        filename: genTitle
+          ? String(genTitle).trim()
+          : generated
+            ? `chatgpt-afbeelding-${match[1].slice(-8)}`
+            : null,
+        mimeType: part.mime_type || null,
+        size: typeof part.size_bytes === 'number' ? part.size_bytes : null,
+      }));
     }
     return out;
   }
 
+  /**
+   * Beurten én bijlagen in één pass, zodat elke bijlage weet ná welke beurt hij
+   * hoort (`afterTurn` = aantal beurten ervoor). Een gegenereerde foto zit in
+   * een `tool`-bericht en hoort bij het antwoord dat eraan voorafging; zonder
+   * die positie belandt hij onderaan de chat in plaats van in het gesprek.
+   */
   function turnsFromApi(root) {
     const turns = [];
-    const branch = activeBranchMessages(root);
-    for (const msg of branch) {
+    const attachments = [];
+    const seen = new Set();
+    for (const msg of activeBranchMessages(root)) {
       const role = msg?.author?.role;
-      if (!role || role === 'system' || role === 'tool') continue;
-      const text = messageText(msg);
-      if (!text) continue;
-      turns.push({ role: role === 'user' ? 'user' : 'assistant', text });
+      if (role && role !== 'system' && role !== 'tool') {
+        const text = messageText(msg);
+        if (text) turns.push({ role: role === 'user' ? 'user' : 'assistant', text });
+      }
+      for (const ref of attachmentsFromMessage(msg)) {
+        const key = ref.providerFileId ? 'id:' + ref.providerFileId : ref.url;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        ref.afterTurn = turns.length;
+        attachments.push(ref);
+      }
     }
-    return { turns, attachments: attachmentsFromApi(branch) };
+    return { turns, attachments };
   }
 
   function turnsFromDom() {
@@ -439,7 +444,7 @@
       return { error: 'geen berichten gevonden op deze pagina' };
     }
     return buildConversation({
-      content: transcriptFromTurns(turns),
+      content: transcriptFromTurns(turns, attachments),
       turns,
       title,
       url: id ? `https://chatgpt.com/c/${id}` : location.href,
@@ -485,7 +490,7 @@
           const turns = parsed.turns;
           if (!turns.length) return null;
           return buildConversation({
-            content: transcriptFromTurns(turns),
+            content: transcriptFromTurns(turns, parsed.attachments),
             turns,
             title: typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : undefined,
             url: `https://chatgpt.com/c/${conv.id}`,

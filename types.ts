@@ -65,6 +65,8 @@ export interface CaptureData {
     hash?: string;
     /** Local viewer URL: chronicle-asset://blob/<hash>. */
     localUrl?: string;
+    /** Aantal beurten ervoor: de viewer plaatst de bijlage in het gesprek. */
+    afterTurn?: number;
   }>;
   /**
    * Files the plugin saw but could not obtain (too large, expired, blocked).

@@ -57,6 +57,50 @@ const formatBytes = (size?: number) => {
 };
 
 /**
+ * Eén bijlage op zijn plek in het gesprek: een afbeelding als thumbnail, een
+ * bestand als regel met download. De plugin zet daarvoor een
+ * `[Bijlage: naam]`-marker in het transcript achter de beurt waarin het bestand
+ * ontstond; zonder die marker zou alles onderaan de chat belanden.
+ */
+const InlineAttachment: React.FC<{ att: ViewerAttachment }> = ({ att }) => {
+  const isImage = (att.mimeType || '').toLowerCase().startsWith('image/');
+  const src = att.localUrl || att.url || '';
+  if (isImage && src) {
+    return (
+      <figure className="my-4">
+        <a href={src} target="_blank" rel="noreferrer">
+          <img
+            src={src}
+            alt={att.filename || 'afbeelding'}
+            loading="lazy"
+            className="rounded-xl border border-sandstone/30 shadow-sm max-h-[28rem] w-auto object-contain"
+          />
+        </a>
+        {att.filename && (
+          <figcaption className="mt-2 text-[10px] uppercase tracking-widest text-stone-400">
+            {att.filename}{att.size ? ` · ${formatBytes(att.size)}` : ''}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+  return (
+    <div className="my-3 flex items-center gap-3 rounded-lg border border-sandstone/30 bg-sandstone/5 px-3 py-2">
+      <span className="text-[10px] font-black uppercase text-stone-400">
+        {(att.filename || '').split('.').pop()?.slice(0, 4) || 'file'}
+      </span>
+      <span className="text-sm text-earth-dark dark:text-stone-200 truncate">{att.filename || att.id}</span>
+      {att.size ? <span className="text-[10px] text-stone-400">{formatBytes(att.size)}</span> : null}
+      {src ? (
+        <a href={src} className="ml-auto text-[10px] font-black uppercase text-sage-green hover:underline" download>
+          Download
+        </a>
+      ) : null}
+    </div>
+  );
+};
+
+/**
  * Niet-afbeeldingsbijlagen (pdf's, tekstextracties, documenten). Afbeeldingen
  * staan al in de galerij hierboven; dit is de downloadbare rest. Wat niet
  * opgehaald kon worden staat er expliciet bij — een chat die doet alsof hij
@@ -247,6 +291,21 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
   const parsedMessages = useMemo(() => parseChatMessages(chat.content, chat.createdAt), [chat.content]);
 
+  // Bijlagen met een marker in de tekst horen in het gesprek zelf, niet in de
+  // lijst onderaan. `[Bijlage: naam]` wordt door de plugin achter de beurt gezet
+  // waarin het bestand ontstond (ChatGPT schrijft daar een tool-bericht).
+  const attachments = chat.capture?.attachments || [];
+  const inlineNames = new Set<string>();
+  for (const att of attachments) {
+    if (!att.filename) continue;
+    const marker = `[Bijlage: ${att.filename}]`;
+    if (parsedMessages.some((m) => m.text.includes(marker))) inlineNames.add(att.filename);
+  }
+  const inlineAttachments = attachments.filter((att) => att.filename && inlineNames.has(att.filename));
+  const restAttachments = attachments.filter((att) => !att.filename || !inlineNames.has(att.filename));
+  const inlineLocalUrls = new Set(inlineAttachments.map((att) => att.localUrl).filter(Boolean) as string[]);
+  const galleryAssets = (chat.assets || []).filter((asset) => !inlineLocalUrls.has(asset));
+
   const handleSave = () => { onUpdate({ ...chat, title: editTitle, summary: editSummary, tags: editTags, content: editContent }); setIsEditing(false); };
   
   const handleAddAsset = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -410,19 +469,28 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                     <textarea className="w-full min-h-[400px] bg-transparent font-serif leading-relaxed text-lg outline-none" value={editContent} onChange={(e) => setEditContent(e.target.value)} />
                   ) : (
                     <>
-                      {isNote ? <MessageContent text={chat.content} /> : parsedMessages.map((msg, idx) => (
-                        msg.role === 'user' 
-                          ? <UserMessageBubble key={idx} message={msg} userAvatar={settings.userAvatar} userName={settings.userName} />
-                          : <AIMessageContent key={idx} message={msg} source={chat.source} />
-                      ))}
-                      {chat.assets && chat.assets.length > 0 && (
+                      {isNote ? <MessageContent text={chat.content} /> : parsedMessages.map((msg, idx) => {
+                        const here = attachments.filter((att) => att.filename && msg.text.includes(`[Bijlage: ${att.filename}]`));
+                        const shown = here.length
+                          ? { ...msg, text: msg.text.replace(/^\[Bijlage: .*\]\s*$/gm, '').trim() }
+                          : msg;
+                        return (
+                          <React.Fragment key={idx}>
+                            {shown.role === 'user'
+                              ? <UserMessageBubble message={shown} userAvatar={settings.userAvatar} userName={settings.userName} />
+                              : <AIMessageContent message={shown} source={chat.source} />}
+                            {here.map((att) => <InlineAttachment key={att.id} att={att} />)}
+                          </React.Fragment>
+                        );
+                      })}
+                      {galleryAssets.length > 0 && (
                         <div className="mt-12 pt-8 border-t border-sandstone/20">
                           <h4 className="text-[10px] font-black text-moss-brown uppercase tracking-widest mb-6">Integrated Visual Assets</h4>
-                          <ImageGallery assets={chat.assets} />
+                          <ImageGallery assets={galleryAssets} />
                         </div>
                       )}
                       <AttachmentList
-                        attachments={chat.capture?.attachments || []}
+                        attachments={restAttachments}
                         gaps={chat.capture?.attachmentGaps}
                       />
                     </>
