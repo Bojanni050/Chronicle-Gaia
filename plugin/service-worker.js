@@ -287,6 +287,9 @@ async function cacheAttachment(ref, attachment) {
   // Een tekstextractie is de tweedekeuze: niet cachen onder het file-id, zodat
   // een volgende levering het origineel opnieuw probeert (netwerk kan terug zijn).
   if (ref.providerFileId && /-tekstextractie\.txt$/i.test(String(attachment.filename || ''))) return;
+  // Alleen lokaal bewaard (Foundation was onbereikbaar): ook niet cachen, zodat
+  // een volgende levering de upload opnieuw probeert en het echte id oplevert.
+  if (attachment && (attachment.foundationPending === true || /^local:/i.test(String(attachment.id || '')))) return;
   const data = await chrome.storage.local.get(ATTACHMENT_CACHE_KEY);
   const cache = data[ATTACHMENT_CACHE_KEY] || {};
   cache[key] = attachment;

@@ -47,6 +47,12 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB of JSON is a very large conversa
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_TITLE = 500;
 
+// Chronicle-only attachment ids (Foundation unreachable at fetch time) carry
+// this prefix so every layer can tell them apart from Foundation ids. Must stay
+// in sync with `LOCAL_ATTACHMENT_PREFIX` in utils/foundationCapture.ts and
+// plugin/service-worker.js.
+const LOCAL_ATTACHMENT_PREFIX = 'local:';
+
 function sendJson(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -170,6 +176,22 @@ async function uploadAttachmentToFoundation(bytes, { filename, mimeType }, resol
 }
 
 /**
+ * Merges fields into a mirrored blob's meta.json. A lost meta only costs a
+ * duplicate upload later, so a failure here is a warning, never an error.
+ */
+function patchBlobMeta(dir, patch) {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const metaPath = path.join(dir, 'meta.json');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    fs.writeFileSync(metaPath, JSON.stringify({ ...meta, ...patch }));
+  } catch (err) {
+    console.warn('[Chronicle] could not update attachment meta:', err.message || err);
+  }
+}
+
+/**
  * Handles POST /ingest/attachment: the plugin fetched the bytes, this mirrors
  * them into Chronicle's content-addressed blob store and uploads the same bytes
  * to Foundation. The response carries the reference the chat then uses, so the
@@ -204,9 +226,32 @@ async function handleIngestAttachment({ bytes, filename, mimeType }, resolveFoun
     };
   }
 
+  const name = (filename && String(filename).trim()) || 'attachment';
+  const type = (mimeType && String(mimeType).trim()) || 'application/octet-stream';
+
   const result = await uploadAttachmentToFoundation(bytes, { filename, mimeType }, resolveFoundationConfig);
   if (!result.ok) {
-    return { status: 502, body: { error: result.error, details: result.details, hash: mirror.hash } };
+    // Foundation is down or refused the upload. The bytes are already mirrored,
+    // so the honest answer is "stored, not yet shared" instead of losing the
+    // file: return a local-only attachment whose id carries the `local:` prefix.
+    // Foundation must never receive such an id (it would serve a 404 link), so
+    // the chat forward strips them; a later delivery of the same bytes retries
+    // the upload and replaces the id with Foundation's own.
+    patchBlobMeta(mirror.dir, { foundationPending: { error: result.error, at: Date.now() } });
+    return {
+      status: 201,
+      body: {
+        id: `${LOCAL_ATTACHMENT_PREFIX}${mirror.hash}`,
+        filename: name,
+        mimeType: type,
+        size: bytes.length,
+        url: localUrl,
+        hash: mirror.hash,
+        localUrl,
+        foundationPending: true,
+        foundationError: result.error,
+      },
+    };
   }
   const stored = {
     id: result.attachment.id,
@@ -216,16 +261,8 @@ async function handleIngestAttachment({ bytes, filename, mimeType }, resolveFoun
     url: result.attachment.url,
     at: Date.now(),
   };
-  try {
-    const path = require('path');
-    const fs = require('fs');
-    const metaPath = path.join(mirror.dir, 'meta.json');
-    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-    fs.writeFileSync(metaPath, JSON.stringify({ ...meta, foundation: stored }));
-  } catch (err) {
-    // The upload succeeded; a lost meta only costs a duplicate upload later.
-    console.warn('[Chronicle] could not record attachment foundation id:', err.message || err);
-  }
+  // Uploading now clears any earlier "pending" mark for the same bytes.
+  patchBlobMeta(mirror.dir, { foundation: stored, foundationPending: null });
   return {
     status: 201,
     body: {

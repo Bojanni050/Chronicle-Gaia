@@ -124,6 +124,18 @@ describe('buildChatIngestPayload', () => {
     expect(buildChatIngestPayload({ content: 'x', attachments: [{ filename: 'zonder-id.png' }] }).attachments).toBeUndefined();
     expect(buildChatIngestPayload({ content: 'x', attachments: [] }).attachments).toBeUndefined();
   });
+
+  it('keeps local-only attachments out of the Foundation payload', () => {
+    const payload = buildChatIngestPayload({
+      content: 'x',
+      attachments: [
+        { id: 'local:a'.repeat(64), filename: 'lokaal.pdf', mimeType: 'application/pdf' },
+        { id: 'abc123', filename: 'gedeeld.pdf', mimeType: 'application/pdf' },
+      ],
+    });
+    expect(payload.attachments).toEqual([{ id: 'abc123', filename: 'gedeeld.pdf', mimeType: 'application/pdf' }]);
+    expect(buildChatIngestPayload({ content: 'x', attachments: [{ id: 'local:x' }] }).attachments).toBeUndefined();
+  });
 });
 
 describe('toFoundationRole', () => {

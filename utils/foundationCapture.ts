@@ -65,6 +65,13 @@ export interface ChatIngestPayload {
 /** The `source` value Foundation records for chats delivered by Chronicle. */
 export const CHRONICLE_CAPTURE_SOURCE = 'chronicle-capture';
 
+/**
+ * Prefix for attachments Chronicle holds locally but has not uploaded to
+ * Foundation yet (Foundation unreachable when the plugin fetched the bytes).
+ * Kept in sync with `LOCAL_ATTACHMENT_PREFIX` in services/ingest-listener.js.
+ */
+const LOCAL_ATTACHMENT_PREFIX = 'local:';
+
 /** Fields Foundation refuses on every entry-point — server-owned, never ours. */
 const SERVER_OWNED_KEYS = [
   'status',
@@ -184,6 +191,11 @@ function normalizeAttachments(attachments: RawChatCapture['attachments']): Found
   for (const att of attachments) {
     const id = clean(att && att.id);
     if (!id) continue; // Foundation requires an id on every attachment
+    // `local:` marks a file Chronicle kept but could not hand to Foundation yet
+    // (it was unreachable when the plugin fetched the bytes). Sending it would
+    // give Foundation a link to /api/attachments/local:... that 404s, so it
+    // stays behind until a later delivery uploads it and gets a real id.
+    if (id.startsWith(LOCAL_ATTACHMENT_PREFIX)) continue;
     const entry: FoundationAttachment = { id };
     const filename = clean(att.filename);
     if (filename) entry.filename = filename;

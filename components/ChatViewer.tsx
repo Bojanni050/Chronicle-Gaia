@@ -81,6 +81,7 @@ const AttachmentList: React.FC<{
               <p className="truncate text-sm text-earth-dark dark:text-stone-200">{att.filename || att.id}</p>
               <p className="text-[10px] uppercase tracking-widest text-moss-brown/70 dark:text-stone-400">
                 {att.mimeType || 'onbekend type'}{att.size ? ` • ${formatBytes(att.size)}` : ''}
+                {att.id.startsWith('local:') ? ' • alleen lokaal' : ''}
               </p>
             </div>
             {att.localUrl && (
