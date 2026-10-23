@@ -170,6 +170,8 @@
       out.push({
         src,
         blob,
+        naturalWidth: img.naturalWidth || 0,
+        naturalHeight: img.naturalHeight || 0,
         fileId: blob ? null : fileIdFromUrl(src),
         filename: alt && alt.length < 60 ? alt : null,
       });
@@ -215,32 +217,57 @@
       console.info('[Chronicle] geen blob-afbeelding in de pagina voor', pending.length, 'verwijzing(en)');
       return attachments;
     }
-    const used = new Set();
-    for (const ref of pending) {
-      let match = null;
-      for (const image of blobs) {
-        if (used.has(image.src)) continue;
-        if (!image.bytes) {
-          try {
-            image.bytes = await blobBytes(image.src);
-          } catch (err) {
-            image.bytes = null;
-            console.info('[Chronicle] blob onleesbaar:', String(err && err.message ? err.message : err));
-          }
-        }
-        if (!image.bytes) continue;
-        if (typeof ref.size === 'number' && image.bytes.size === ref.size) {
-          match = image;
-          break;
-        }
+
+    for (const image of blobs) {
+      if (image.bytes) continue;
+      try {
+        image.bytes = await blobBytes(image.src);
+      } catch (err) {
+        image.bytes = null;
+        console.info('[Chronicle] blob onleesbaar:', String(err && err.message ? err.message : err));
       }
-      if (!match) continue;
-      used.add(match.src);
-      ref.dataBase64 = match.bytes.base64;
-      ref.mimeType = ref.mimeType || match.bytes.mimeType;
-      ref.size = match.bytes.size;
     }
-    // Diagnose: welke verwijzing bleef zonder bytes achter, en waarom.
+    const usable = blobs.filter((image) => image.bytes);
+    const used = new Set();
+    const take = (ref, image, how) => {
+      used.add(image.src);
+      ref.dataBase64 = image.bytes.base64;
+      ref.mimeType = ref.mimeType || image.bytes.mimeType;
+      ref.size = image.bytes.size;
+      ref.matchedBy = how;
+    };
+
+    // 1. Zelfde bytes. De pagina toont soms een hercodeerde versie, dus dit is
+    //    niet altijd genoeg (gemeten: 2,85 MB in de API, 3,11 MB als blob).
+    for (const ref of pending) {
+      const hit = usable.find(
+        (image) => !used.has(image.src) && typeof ref.size === 'number' && image.bytes.size === ref.size
+      );
+      if (hit) take(ref, hit, 'bytes');
+    }
+    // 2. Zelfde afmetingen: hercoderen verandert de pixelmaat niet.
+    for (const ref of pending) {
+      if (ref.dataBase64) continue;
+      const hit = usable.find(
+        (image) =>
+          !used.has(image.src) &&
+          ref.width &&
+          ref.height &&
+          image.naturalWidth === ref.width &&
+          image.naturalHeight === ref.height
+      );
+      if (hit) take(ref, hit, 'afmeting');
+    }
+    // 3. Laatste redmiddel: alleen voor gegenereerde afbeeldingen, en alleen
+    //    als er precies evenveel over zijn. Op volgorde, want dat is het enige
+    //    signaal dat dan nog over is. Een upload komt hier nooit aan te pas —
+    //    die heeft een eigen download-url en hoort niet bij een blob.
+    const left = pending.filter((ref) => !ref.dataBase64 && ref.generated);
+    const free = usable.filter((image) => !used.has(image.src));
+    if (left.length && left.length === free.length) {
+      left.forEach((ref, index) => take(ref, free[index], 'volgorde'));
+    }
+
     const unmatched = pending.filter((ref) => !ref.dataBase64);
     if (unmatched.length) {
       console.info(
@@ -327,7 +354,7 @@
       // De titel die ChatGPT zelf aan de generatie gaf ("Winterkat") is een
       // betere bestandsnaam dan een id.
       const genTitle = (msg.metadata && msg.metadata.image_gen_title) || null;
-      out.push(window.__chronicleUI.attachmentRef({
+      const ref = window.__chronicleUI.attachmentRef({
         providerFileId: match[1],
         download: 'chatgpt',
         filename: genTitle
@@ -337,7 +364,14 @@
             : null,
         mimeType: part.mime_type || null,
         size: typeof part.size_bytes === 'number' ? part.size_bytes : null,
-      }));
+      });
+      // Alleen voor het koppelen aan een blob in de pagina: de pixelmaat
+      // verandert niet bij hercoderen, de bytegrootte wel. `generated` houdt
+      // uploads buiten de volgorde-fallback.
+      if (typeof part.width === 'number') ref.width = part.width;
+      if (typeof part.height === 'number') ref.height = part.height;
+      if (pointer.startsWith('sediment://')) ref.generated = true;
+      out.push(ref);
     }
     return out;
   }
