@@ -146,26 +146,86 @@
    * De afbeeldingen die de pagina toont, met CDN-url en id. Gegenereerde foto's
    * (DALL·E/GPT-image) staan in de API als `sediment://`-pointer zonder
    * download-url; de `<img>` in het bericht is dan de enige route naar de bytes.
-   * Alleen http(s): `blob:` is pagina-gebonden en niet door de service worker
-   * op te halen.
+   * `blob:` is pagina-gebonden en niet door de service worker op te halen; die
+   * wordt hier wél gemeld (`blob: true`) en later in de pagina zelf uitgelezen.
    */
   function domImageRefs() {
     const out = [];
     const seen = new Set();
     for (const img of document.querySelectorAll('[data-message-author-role] img[src]')) {
       const src = img.currentSrc || img.src;
-      if (!src || !/^https?:/i.test(src) || seen.has(src)) continue;
+      if (!src || seen.has(src)) continue;
+      const blob = /^blob:/i.test(src);
+      if (!blob && !/^https?:/i.test(src)) continue;
       if (/avatar|profile|emoji|icon|logo/i.test(src)) continue;
       if (img.naturalWidth && img.naturalWidth < 64) continue;
       seen.add(src);
       const alt = String(img.getAttribute('alt') || '').trim();
       out.push({
         src,
-        fileId: fileIdFromUrl(src),
+        blob,
+        fileId: blob ? null : fileIdFromUrl(src),
         filename: alt && alt.length < 60 ? alt : null,
       });
     }
     return out;
+  }
+
+  /** Leest een `blob:`-afbeelding als base64 (alleen hier mogelijk, niet in de SW). */
+  async function blobBytes(src) {
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`blob ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    // String.fromCharCode(...bytes) op 2,4 MB blaast de stack op: per blok.
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return {
+      base64: btoa(binary),
+      mimeType: response.headers.get('content-type') || 'image/png',
+      size: bytes.length,
+    };
+  }
+
+  /**
+   * Vult de bytes aan voor verwijzingen zonder download-url (de `sediment://`
+   * pointers van gegenereerde foto's). De pagina toont die foto als blob; de
+   * koppeling gaat op bytegrootte (`size_bytes` uit de API = werkelijke
+   * blobgrootte, gemeten: 2405280), niet op `alt` — die is generiek
+   * ("Gegenereerde afbeelding 1").
+   */
+  async function inlineBlobImages(attachments) {
+    const pending = attachments.filter((ref) => ref && !ref.url && !ref.dataBase64);
+    const blobs = domImageRefs().filter((image) => image.blob);
+    if (!pending.length || !blobs.length) return attachments;
+    const used = new Set();
+    for (const ref of pending) {
+      let match = null;
+      for (const image of blobs) {
+        if (used.has(image.src)) continue;
+        if (!image.bytes) {
+          try {
+            image.bytes = await blobBytes(image.src);
+          } catch (err) {
+            image.bytes = null;
+            console.info('[Chronicle] blob onleesbaar:', String(err && err.message ? err.message : err));
+          }
+        }
+        if (!image.bytes) continue;
+        if (typeof ref.size === 'number' && image.bytes.size === ref.size) {
+          match = image;
+          break;
+        }
+      }
+      if (!match) continue;
+      used.add(match.src);
+      ref.dataBase64 = match.bytes.base64;
+      ref.mimeType = ref.mimeType || match.bytes.mimeType;
+      ref.size = match.bytes.size;
+    }
+    return attachments;
   }
 
   /**
@@ -293,18 +353,35 @@
   }
 
   /**
-   * DOM-vangnet voor afbeeldingen als de API-read faalt: alleen http(s)-URLs
-   * (blob: is pagina-gebonden en niet door de service worker op te halen).
+   * DOM-vangnet voor afbeeldingen als de API-read faalt: http(s)-URLs gaan als
+   * verwijzing mee, `blob:`-afbeeldingen worden hier meteen uitgelezen (de
+   * service worker kan er niet bij).
    */
-  function attachmentsFromDom() {
-    return domImageRefs().map((image) =>
-      window.__chronicleUI.attachmentRef({
-        url: image.src,
-        providerFileId: image.fileId,
-        download: image.fileId ? 'chatgpt' : 'direct',
-        filename: image.filename,
-      })
-    );
+  async function attachmentsFromDom() {
+    const out = [];
+    for (const image of domImageRefs()) {
+      if (!image.blob) {
+        out.push(window.__chronicleUI.attachmentRef({
+          url: image.src,
+          providerFileId: image.fileId,
+          download: image.fileId ? 'chatgpt' : 'direct',
+          filename: image.filename,
+        }));
+        continue;
+      }
+      try {
+        const bytes = await blobBytes(image.src);
+        out.push(window.__chronicleUI.attachmentRef({
+          filename: image.filename || 'chatgpt-afbeelding',
+          mimeType: bytes.mimeType,
+          size: bytes.size,
+          dataBase64: bytes.base64,
+        }));
+      } catch (err) {
+        console.info('[Chronicle] blob onleesbaar:', String(err && err.message ? err.message : err));
+      }
+    }
+    return out;
   }
 
   async function collectConversation() {
@@ -321,6 +398,7 @@
         // De pagina toont de gegenereerde foto's; de API geeft daar alleen een
         // sediment-pointer voor. Koppel ze hier, ook als de API-read slaagde.
         attachments = withDomImages(parsed.attachments, domImageRefs());
+        attachments = await inlineBlobImages(attachments);
         title = typeof root.title === 'string' && root.title.trim() ? root.title.trim() : null;
         occurredAt = root.update_time || root.create_time || null;
       } catch (err) {
@@ -330,7 +408,7 @@
     }
     if (!turns || !turns.length) {
       turns = turnsFromDom();
-      attachments = attachmentsFromDom();
+      attachments = await attachmentsFromDom();
     }
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };

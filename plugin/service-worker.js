@@ -109,7 +109,7 @@ async function enqueue(conv) {
     const queue = await getQueue();
     const url = conv && conv.url;
     const kept = url ? queue.filter((e) => !e.conv || e.conv.url !== url) : queue;
-    kept.push({ conv, at: Date.now() });
+    kept.push({ conv: withoutInlineBytes(conv), at: Date.now() });
     await setQueue(kept);
   });
 }
@@ -259,6 +259,19 @@ function textExtraction(ref) {
  * tekstextractie die de API al meegaf (als .txt, met een naam die dat zegt).
  */
 async function fetchAttachment(ref) {
+  // Bytes die de pagina al had (blob:-afbeeldingen van gegenereerde foto's).
+  // Ze staan als base64 in de ref; de service worker kan die blob zelf niet
+  // ophalen, het content script wel.
+  if (ref.dataBase64) {
+    const binary = atob(String(ref.dataBase64));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return {
+      bytes,
+      filename: ref.filename || 'chatgpt-afbeelding',
+      mimeType: ref.mimeType || 'image/png',
+    };
+  }
   if (ref.download === 'chatgpt' && ref.providerFileId) {
     return fetchChatGptFile(ref);
   }
@@ -407,6 +420,21 @@ async function resolveAttachments(conv, config) {
   return out;
 }
 
+/**
+ * Haalt inline bytes uit een gesprek vóór het in de wachtrij gaat. Base64 van
+ * een paar MB zou het storage-quotum van de extensie opeten; de bijlage wordt
+ * bij een retry dan een gap, de tekst blijft behouden.
+ */
+function withoutInlineBytes(conv) {
+  if (!conv || !Array.isArray(conv.attachments)) return conv;
+  const attachments = conv.attachments.map((ref) => {
+    if (!ref || !ref.dataBase64) return ref;
+    const { dataBase64, ...rest } = ref;
+    return rest;
+  });
+  return { ...conv, attachments };
+}
+
 /** Levert één gesprek af. Transport-fout → queue; 4xx → definitief, niet queuen. */
 async function deliver(conv) {
   const { baseUrl, token } = await getConfig();
@@ -422,7 +450,7 @@ async function deliver(conv) {
     outgoing = await resolveAttachments(conv, { baseUrl, token });
   } catch (err) {
     console.warn('[Chronicle] bijlagen overslaan:', String((err && err.message) || err));
-    outgoing = conv;
+    outgoing = withoutInlineBytes(conv);
   }
   let response;
   try {

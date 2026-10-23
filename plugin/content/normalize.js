@@ -251,6 +251,11 @@
     // nooit in de chatpayload. Ze gaan wél mee in de retry-queue (storage),
     // dus begrensd: een enorme PDF mag het queue-quotum niet opeten.
     if (src.text && String(src.text).trim()) ref.text = String(src.text).slice(0, 100000);
+    // Bytes die de pagina al in het geheugen heeft. Gegenereerde foto's staan in
+    // de DOM als `blob:`-url; die is pagina-gebonden, dus de service worker kan
+    // hem niet zelf ophalen. Base64 reist daarom mee in de ref — nooit verder
+    // dan de service worker (Chronicle krijgt de bytes via /ingest/attachment).
+    if (src.dataBase64 && String(src.dataBase64).length) ref.dataBase64 = String(src.dataBase64);
     return ref;
   }
 
