@@ -449,6 +449,12 @@
         // sediment-pointer voor. Koppel ze hier, ook als de API-read slaagde.
         attachments = withDomImages(parsed.attachments, domImageRefs());
         attachments = await inlineBlobImages(attachments);
+        if (attachments.length) {
+          console.info(
+            '[Chronicle] bijlagen:',
+            attachments.map((a) => `${a.filename || a.providerFileId} → na beurt ${a.afterTurn ?? '?'}`).join(' | ')
+          );
+        }
         title = typeof root.title === 'string' && root.title.trim() ? root.title.trim() : null;
         occurredAt = root.update_time || root.create_time || null;
       } catch (err) {

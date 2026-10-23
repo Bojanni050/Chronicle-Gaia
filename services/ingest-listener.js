@@ -378,7 +378,21 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
     const hasNewGaps = (normalized.item.capture.attachmentGaps || []).some(
       (gap) => !existingGaps.has(`${gap.filename || ''}|${gap.reason || ''}`)
     );
-    if (sameContent && !hasNewAttachments && !hasNewGaps) {
+    // De plek van een bijlage in het gesprek is ook een uitkomst: een oudere
+    // export zonder `afterTurn` en een nieuwe mét zijn inhoudelijk gelijk, maar
+    // niet hetzelfde. Zonder deze vergelijking bleef de positie voorgoed leeg.
+    const existingPlacement = new Map(
+      ((existing.capture && existing.capture.attachments) || [])
+        .filter((att) => att && att.id)
+        .map((att) => [att.id, typeof att.afterTurn === 'number' ? att.afterTurn : null])
+    );
+    const hasNewPlacement = (normalized.item.capture.attachments || []).some(
+      (att) =>
+        att &&
+        typeof att.afterTurn === 'number' &&
+        existingPlacement.get(att.id) !== att.afterTurn
+    );
+    if (sameContent && !hasNewAttachments && !hasNewGaps && !hasNewPlacement) {
       return { status: 200, body: { action: 'duplicate', id: existing.id } };
     }
     // Same conversation, grown or changed: update the row in place and
