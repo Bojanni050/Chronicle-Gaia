@@ -229,55 +229,55 @@
     }
     const usable = blobs.filter((image) => image.bytes);
     const used = new Set();
+    const free = () => usable.filter((image) => !used.has(image.src));
+    const tally = { bytes: 0, afmeting: 0, volgorde: 0 };
     const take = (ref, image, how) => {
       used.add(image.src);
       ref.dataBase64 = image.bytes.base64;
       ref.mimeType = ref.mimeType || image.bytes.mimeType;
       ref.size = image.bytes.size;
       ref.matchedBy = how;
+      tally[how] = (tally[how] || 0) + 1;
     };
 
     // 1. Zelfde bytes. De pagina toont soms een hercodeerde versie, dus dit is
     //    niet altijd genoeg (gemeten: 2,85 MB in de API, 3,11 MB als blob).
     for (const ref of pending) {
-      const hit = usable.find(
-        (image) => !used.has(image.src) && typeof ref.size === 'number' && image.bytes.size === ref.size
-      );
+      const size = Number(ref.size);
+      if (!size) continue;
+      const hit = free().find((image) => Number(image.bytes.size) === size);
       if (hit) take(ref, hit, 'bytes');
     }
-    // 2. Zelfde afmetingen: hercoderen verandert de pixelmaat niet.
+    // 2. Zelfde afmetingen: hercoderen verandert de pixelmaat niet. Let op
+    //    `Number()` aan beide kanten — een van beide blijkt in de praktijk
+    //    weleens een string te zijn, en dan matcht `===` stil niet.
     for (const ref of pending) {
       if (ref.dataBase64) continue;
-      const hit = usable.find(
-        (image) =>
-          !used.has(image.src) &&
-          ref.width &&
-          ref.height &&
-          image.naturalWidth === ref.width &&
-          image.naturalHeight === ref.height
+      const width = Number(ref.width);
+      const height = Number(ref.height);
+      if (!width || !height) continue;
+      const hit = free().find(
+        (image) => Number(image.naturalWidth) === width && Number(image.naturalHeight) === height
       );
       if (hit) take(ref, hit, 'afmeting');
     }
-    // 3. Laatste redmiddel: alleen voor gegenereerde afbeeldingen, en alleen
-    //    als er precies evenveel over zijn. Op volgorde, want dat is het enige
-    //    signaal dat dan nog over is. Een upload komt hier nooit aan te pas —
-    //    die heeft een eigen download-url en hoort niet bij een blob.
-    const left = pending.filter((ref) => !ref.dataBase64 && ref.generated);
-    const free = usable.filter((image) => !used.has(image.src));
-    if (left.length && left.length === free.length) {
-      left.forEach((ref, index) => take(ref, free[index], 'volgorde'));
-    }
-    // 4. Evenveel onopgeloste verwijzingen als vrije blobs: dan is volgorde het
-    //    enige signaal dat over is, ook voor een afbeelding die niet als
-    //    gegenereerd herkend is. Beter de juiste bytes met een kleine kans op
-    //    verwisseling dan een lege bijlage.
+    // 3. Laatste redmiddel: precies evenveel onopgeloste verwijzingen als vrije
+    //    blobs. Dan is volgorde het enige signaal dat over is; de juiste bytes
+    //    met een kleine kans op verwisseling is beter dan een lege bijlage.
     const rest = pending.filter((ref) => !ref.dataBase64);
-    const stillFree = usable.filter((image) => !used.has(image.src));
-    if (rest.length && rest.length === stillFree.length) {
-      rest.forEach((ref, index) => take(ref, stillFree[index], 'volgorde-alle'));
+    const left = free();
+    if (rest.length && rest.length === left.length) {
+      rest.forEach((ref, index) => take(ref, left[index], 'volgorde'));
     }
 
     const unmatched = pending.filter((ref) => !ref.dataBase64);
+    // Altijd loggen, ook als het lukt: zonder deze regel is achteraf niet te
+    // zien of een gemiste foto aan de plugin of aan de levering lag.
+    console.info(
+      '[Chronicle] blobmatch:',
+      `${pending.length} verwijzing(en), ${usable.length} blob(s) —`,
+      `bytes=${tally.bytes} afmeting=${tally.afmeting} volgorde=${tally.volgorde} onopgelost=${unmatched.length}`
+    );
     if (unmatched.length) {
       console.info(
         '[Chronicle] geen passende blob voor',
@@ -298,11 +298,6 @@
               : 'onleesbaar'
           )
           .join(', ')
-      );
-    } else {
-      console.info(
-        '[Chronicle] blobkoppeling:',
-        pending.map((ref) => `${ref.filename || ref.providerFileId} via ${ref.matchedBy || '?'}`).join(' | ')
       );
     }
     return attachments;
