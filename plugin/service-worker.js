@@ -372,7 +372,9 @@ async function resolveAttachments(conv, config) {
     try {
       const cached = await getCachedAttachment(ref);
       if (cached && cached.id) {
-        resolved.push(cached);
+        resolved.push(
+          typeof ref.afterTurn === 'number' ? { ...cached, afterTurn: ref.afterTurn } : cached
+        );
         continue;
       }
       const payload = await fetchAttachment(ref);
@@ -390,6 +392,9 @@ async function resolveAttachments(conv, config) {
         hash: uploaded.body.hash,
         localUrl: uploaded.body.localUrl,
       };
+      // Positie in het gesprek hoort bij de chat, niet bij de download: zonder
+      // dit veld zakt een bijlage naar de lijst onderaan.
+      if (typeof ref.afterTurn === 'number') attachment.afterTurn = ref.afterTurn;
       await cacheAttachment(ref, attachment);
       resolved.push(attachment);
     } catch (err) {

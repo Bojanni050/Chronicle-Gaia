@@ -349,23 +349,43 @@
    * die positie belandt hij onderaan de chat in plaats van in het gesprek.
    */
   function turnsFromApi(root) {
+    const entries = activeBranchMessages(root).map((msg) => {
+      const role = msg?.author?.role;
+      const isTurn = role && role !== 'system' && role !== 'tool';
+      return { msg, role, text: isTurn ? messageText(msg) : '' };
+    });
+
     const turns = [];
+    const turnOfEntry = new Map();
+    entries.forEach((entry, index) => {
+      if (!entry.text) return;
+      turns.push({ role: entry.role === 'user' ? 'user' : 'assistant', text: entry.text });
+      turnOfEntry.set(index, turns.length);
+    });
+
     const attachments = [];
     const seen = new Set();
-    for (const msg of activeBranchMessages(root)) {
-      const role = msg?.author?.role;
-      if (role && role !== 'system' && role !== 'tool') {
-        const text = messageText(msg);
-        if (text) turns.push({ role: role === 'user' ? 'user' : 'assistant', text });
+    entries.forEach((entry, index) => {
+      const refs = attachmentsFromMessage(entry.msg);
+      if (!refs.length) return;
+      // Achter welke beurt hoort dit? Zit het bericht zelf zonder tekst (alleen
+      // een gegenereerde afbeelding), dan achter de eerstvolgende beurt — anders
+      // staat de foto vóór het antwoord dat hem beschrijft.
+      let position = turnOfEntry.get(index);
+      if (position === undefined) {
+        for (let next = index + 1; next < entries.length && position === undefined; next++) {
+          position = turnOfEntry.get(next);
+        }
+        if (position === undefined) position = turns.length;
       }
-      for (const ref of attachmentsFromMessage(msg)) {
+      for (const ref of refs) {
         const key = ref.providerFileId ? 'id:' + ref.providerFileId : ref.url;
         if (!key || seen.has(key)) continue;
         seen.add(key);
-        ref.afterTurn = turns.length;
+        ref.afterTurn = position;
         attachments.push(ref);
       }
-    }
+    });
     return { turns, attachments };
   }
 

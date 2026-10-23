@@ -294,15 +294,23 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   // Bijlagen met een marker in de tekst horen in het gesprek zelf, niet in de
   // lijst onderaan. `[Bijlage: naam]` wordt door de plugin achter de beurt gezet
   // waarin het bestand ontstond (ChatGPT schrijft daar een tool-bericht).
+  // Bijlagen met een marker in de tekst horen in het gesprek zelf, niet in de
+  // lijst onderaan. `[Bijlage: naam]` wordt door de plugin achter de beurt gezet
+  // waarin het bestand ontstond (ChatGPT schrijft daar een tool-bericht).
+  // Vergelijken gaat op een genormaliseerde naam: de opslag saneert bestanden
+  // (`3gstar(1).png` → `3gstar_1_.png`), en dan mag de marker niet losraken.
   const attachments = chat.capture?.attachments || [];
-  const inlineNames = new Set<string>();
-  for (const att of attachments) {
-    if (!att.filename) continue;
-    const marker = `[Bijlage: ${att.filename}]`;
-    if (parsedMessages.some((m) => m.text.includes(marker))) inlineNames.add(att.filename);
-  }
-  const inlineAttachments = attachments.filter((att) => att.filename && inlineNames.has(att.filename));
-  const restAttachments = attachments.filter((att) => !att.filename || !inlineNames.has(att.filename));
+  const attachmentKey = (name?: string) =>
+    String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const markerKeysIn = (text: string) =>
+    Array.from(text.matchAll(/\[Bijlage: ([^\]]+)\]/g)).map((hit) => attachmentKey(hit[1]));
+  const placedKeys = new Set<string>();
+  for (const msg of parsedMessages) for (const key of markerKeysIn(msg.text)) placedKeys.add(key);
+  const inlineAttachments = attachments.filter((att) => {
+    const key = attachmentKey(att.filename);
+    return Boolean(key) && placedKeys.has(key);
+  });
+  const restAttachments = attachments.filter((att) => !inlineAttachments.includes(att));
   const inlineLocalUrls = new Set(inlineAttachments.map((att) => att.localUrl).filter(Boolean) as string[]);
   const galleryAssets = (chat.assets || []).filter((asset) => !inlineLocalUrls.has(asset));
 
@@ -470,7 +478,10 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                   ) : (
                     <>
                       {isNote ? <MessageContent text={chat.content} /> : parsedMessages.map((msg, idx) => {
-                        const here = attachments.filter((att) => att.filename && msg.text.includes(`[Bijlage: ${att.filename}]`));
+                        const keys = markerKeysIn(msg.text);
+                        const here = keys.length
+                          ? attachments.filter((att) => keys.includes(attachmentKey(att.filename)))
+                          : [];
                         const shown = here.length
                           ? { ...msg, text: msg.text.replace(/^\[Bijlage: .*\]\s*$/gm, '').trim() }
                           : msg;
