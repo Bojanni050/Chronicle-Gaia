@@ -102,6 +102,13 @@
    * voor bijlagen, dus dit is de enige route — vandaar best-effort: alleen
    * http(s)-URL's (blob: kan de service worker niet ophalen) en alleen
    * inhoudelijke afbeeldingen (geen avatars/icons).
+   *
+   * Elk `.conversation-container` is één beurt-paar (gebruiker + antwoord),
+   * dus de positie is af te leiden zonder te raden over de content: beurt
+   * `i * 2` is de prompt, `i * 2 + 1` het antwoord. Een upload hangt in de
+   * user-query, een gegenereerde afbeelding in het antwoord — zonder `afterTurn`
+   * belandt alles bovenaan de chat in plaats van in het gesprek (gemeten bij
+   * ChatGPT: daar zat dit in dezelfde val).
    */
   function attachmentsFromDom() {
     const out = [];
@@ -112,21 +119,26 @@
       seen.add(key);
       out.push(ref);
     };
-    for (const container of document.querySelectorAll(SELECTORS.turnContainer)) {
+    document.querySelectorAll(SELECTORS.turnContainer).forEach((container, index) => {
+      const userTurn = index * 2;
+      const modelTurn = index * 2 + 1;
+      const afterTurnFor = (element) =>
+        element.closest('user-query') || element.closest('.user-query') ? userTurn : modelTurn;
       for (const img of container.querySelectorAll('img[src]')) {
         const src = img.currentSrc || img.src;
         if (!src || !/^https?:/i.test(src)) continue;
         const alt = (img.alt || '').trim();
         if (/avatar|profile|emoji|icon|logo/i.test(src + ' ' + alt)) continue;
         if ((img.naturalWidth || 0) > 0 && img.naturalWidth < 64) continue;
-        push(window.__chronicleUI.attachmentRef({
+        const ref = window.__chronicleUI.attachmentRef({
           url: src,
           download: 'direct',
           filename: alt && alt.length > 2 ? alt : null,
-        }));
+        });
+        ref.afterTurn = afterTurnFor(img);
+        push(ref);
       }
-      for (const anchor of container.querySelectorAll('a[href]')) {
-        const href = anchor.href;
+      for (const anchor of container.querySelectorAll('a[href]')) {        const href = anchor.href;
         if (!href || !/^https?:/i.test(href)) continue;
         if (!/googleusercontent|contribution\.usercontent|drive\.google/i.test(href)) continue;
         const label = (anchor.getAttribute('download') || anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
@@ -136,6 +148,20 @@
           filename: label && label.length > 2 ? label : null,
         }));
       }
+    });
+    // Diagnose: zonder deze regel is achteraf niet te zien of het probleem in
+    // het verzamelen of in de levering zit (zelfde les als bij ChatGPT). De
+    // blob-telling vertelt of gegenereerde afbeeldingen alleen via de pagina
+    // zelf te halen zijn.
+    const blobCount = Array.from(document.querySelectorAll('img[src]')).filter((img) =>
+      /^blob:/i.test(img.currentSrc || img.src)
+    ).length;
+    if (out.length) {
+      console.info(
+        '[Chronicle] bijlagen (gemini):',
+        out.map((a) => `${a.filename || (a.url || '').slice(0, 48)} → na beurt ${a.afterTurn ?? '?'}`).join(' | '),
+        `— ${blobCount} blob-afbeelding(en) in de pagina`
+      );
     }
     return out;
   }
@@ -146,13 +172,14 @@
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };
     }
+    const attachments = attachmentsFromDom();
     return buildConversation({
-      content: transcriptFromTurns(turns),
+      content: transcriptFromTurns(turns, attachments),
       turns,
       title: titleFromSidebar(id),
       url: id ? `https://gemini.google.com/app/${id}` : location.href,
       sourceProvider: 'gemini',
-      attachments: attachmentsFromDom(),
+      attachments,
     });
   }
 
@@ -281,13 +308,14 @@
       const turns = navigated ? await waitForRender(conv.id, prevFirstPrompt) : null;
       if (!turns || !turns.length) continue;
       prevFirstPrompt = firstUserPrompt(turns) || prevFirstPrompt;
+      const attachments = attachmentsFromDom();
       out.push(buildConversation({
-        content: transcriptFromTurns(turns),
+        content: transcriptFromTurns(turns, attachments),
         turns,
         title: conv.title,
         url: `https://gemini.google.com/app/${conv.id}`,
         sourceProvider: 'gemini',
-        attachments: attachmentsFromDom(),
+        attachments,
       }));
       await sleep(200);
     }
