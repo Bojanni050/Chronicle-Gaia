@@ -99,9 +99,14 @@
 
   /**
    * Afbeeldingen en bestandschips uit de DOM. Gemini heeft geen leesbare API
-   * voor bijlagen, dus dit is de enige route — vandaar best-effort: alleen
-   * http(s)-URL's (blob: kan de service worker niet ophalen) en alleen
-   * inhoudelijke afbeeldingen (geen avatars/icons).
+   * voor bijlagen, dus dit is de enige route.
+   *
+   * Gemeten in de echte DOM (console-meting 2026-10-29): geüploade afbeeldingen
+   * renderen als `lh3.googleusercontent.com/gg/…`-thumbnail (512 breed, alt
+   * "Uploaded image preview"), gegenereerde afbeeldingen als `blob:`-URL's
+   * (1024 breed) met een beschrijvende alt. Decoderende puinfilters nodig: de
+   * account-avatar onder `lh3…/a/…` (64px, lege alt) en de Google-sparkle-svg
+   * (150px) passeren de oude ≥64px-toets en de alt/src-woordenlijst nog.
    *
    * Elk `.conversation-container` is één beurt-paar (gebruiker + antwoord),
    * dus de positie is af te leiden zonder te raden over de content: beurt
@@ -109,9 +114,52 @@
    * user-query, een gegenereerde afbeelding in het antwoord — zonder `afterTurn`
    * belandt alles bovenaan de chat in plaats van in het gesprek (gemeten bij
    * ChatGPT: daar zat dit in dezelfde val).
+   *
+   * `blob:` kan alleen het content script lezen, niet de service worker, dus de
+   * bytes gaan als base64 in de verwijzing (zelfde route als chatgpt.js) — hier
+   * is geen matching nodig: de blob is zelf de bijlage.
    */
-  function attachmentsFromDom() {
+  async function blobBytes(src) {
+    // Blokgewijze base64; één String.fromCharCode.apply op een paar MB blaast
+    // de stack op — zelfde les als bij chatgpt.js.
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`blob ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return {
+      base64: btoa(binary),
+      mimeType: response.headers.get('content-type') || 'image/png',
+      size: bytes.length,
+    };
+  }
+
+  /** De alt is bij geüploade afbeeldingen de generieke placeholder, geen naam. */
+  function nameFromAlt(alt) {
+    if (!alt) return null;
+    if (/^(uploaded image preview|thumbnail|preview)$/i.test(alt)) return null;
+    const clean = alt.replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim();
+    if (clean.length < 8) return null;
+    return clean.slice(0, 60);
+  }
+
+  function isDecor(src) {
+    // Account-avatars en Google-decoratie: geen chatbijlage.
+    return (
+      /googleusercontent\.com\/a\//i.test(src) ||
+      /sparkle|lamda/i.test(src) ||
+      /\.svg($|\?)/i.test(src)
+    );
+  }
+
+  async function attachmentsFromDom() {
     const out = [];
+    // blob-verwijzingen reizen hier los, want attachmentRef gooit onbekende
+    // velden weg: bij de ref-anders dan bytes wordt de blob-url hier bewaard.
+    const pendingBlobs = [];
     const seen = new Set();
     const push = (ref) => {
       const key = ref.url || ref.providerFileId;
@@ -124,55 +172,92 @@
       const modelTurn = index * 2 + 1;
       const afterTurnFor = (element) =>
         element.closest('user-query') || element.closest('.user-query') ? userTurn : modelTurn;
+      // Blob-verwijzingen hebben geen url/providerFileId en mogen dus niet door
+      // de url-dedup: aparte set op de blob-url zelf.
+      const blobSeen = new Set();
       for (const img of container.querySelectorAll('img[src]')) {
         const src = img.currentSrc || img.src;
-        if (!src || !/^https?:/i.test(src)) continue;
+        if (!src) continue;
+        const isBlob = /^blob:/i.test(src);
+        if (!isBlob && !/^https?:/i.test(src)) continue;
+        if (isDecor(src)) continue;
         const alt = (img.alt || '').trim();
         if (/avatar|profile|emoji|icon|logo/i.test(src + ' ' + alt)) continue;
         if ((img.naturalWidth || 0) > 0 && img.naturalWidth < 64) continue;
-        const ref = window.__chronicleUI.attachmentRef({
-          url: src,
-          download: 'direct',
-          filename: alt && alt.length > 2 ? alt : null,
-        });
-        ref.afterTurn = afterTurnFor(img);
-        push(ref);
+        // Gegenereerde afbeelding: bytes lezen en inline meegeven. De
+        // afterTurn-afbakening (model i.p.v. gebruiker) zit in de DOM-positie.
+        if (isBlob) {
+          if (blobSeen.has(src)) continue;
+          blobSeen.add(src);
+          const ref = window.__chronicleUI.attachmentRef({
+            download: 'blob',
+            afterTurn: afterTurnFor(img),
+            filename: nameFromAlt(alt) || 'gegenereerde afbeelding',
+          });
+          out.push(ref);
+          pendingBlobs.push({ ref, blobSrc: src });
+          continue;
+        }
+        // Geüploade afbeelding: de thumbnail-url zelf is fetchbaar door de
+        // service worker (host-permissie googleusercontent bestaat).
+        push(
+          window.__chronicleUI.attachmentRef({
+            url: src,
+            download: 'direct',
+            afterTurn: afterTurnFor(img),
+            filename: nameFromAlt(alt),
+          })
+        );
       }
-      for (const anchor of container.querySelectorAll('a[href]')) {        const href = anchor.href;
+      for (const anchor of container.querySelectorAll('a[href]')) {
+        const href = anchor.href;
         if (!href || !/^https?:/i.test(href)) continue;
         if (!/googleusercontent|contribution\.usercontent|drive\.google/i.test(href)) continue;
         const label = (anchor.getAttribute('download') || anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
         push(window.__chronicleUI.attachmentRef({
           url: href,
           download: 'direct',
+          afterTurn: afterTurnFor(anchor),
           filename: label && label.length > 2 ? label : null,
         }));
       }
     });
-    // Diagnose: zonder deze regel is achteraf niet te zien of het probleem in
-    // het verzamelen of in de levering zit (zelfde les als bij ChatGPT). De
-    // blob-telling vertelt of gegenereerde afbeeldingen alleen via de pagina
-    // zelf te halen zijn.
-    const blobCount = Array.from(document.querySelectorAll('img[src]')).filter((img) =>
-      /^blob:/i.test(img.currentSrc || img.src)
-    ).length;
-    if (out.length) {
-      console.info(
-        '[Chronicle] bijlagen (gemini):',
-        out.map((a) => `${a.filename || (a.url || '').slice(0, 48)} → na beurt ${a.afterTurn ?? '?'}`).join(' | '),
-        `— ${blobCount} blob-afbeelding(en) in de pagina`
-      );
+    // Blob-bytes ophalen en op de verwijzing zetten. Fouten worden per ref
+    // weggeschreven zodat één kapotte blob de rest niet slikt.
+    for (const { ref, blobSrc } of pendingBlobs) {
+      try {
+        const bytes = await blobBytes(blobSrc);
+        ref.dataBase64 = bytes.base64;
+        ref.mimeType = bytes.mimeType;
+        ref.size = bytes.size;
+      } catch (err) {
+        console.info('[Chronicle] gemini blob onleesbaar:', String((err && err.message) || err));
+      }
     }
+    const carried = out.filter((ref) => ref.dataBase64 || ref.url).length;
+    // Diagnose: zonder deze regel is achteraf niet te zien of het probleem in
+    // het verzamelen of in de levering zit (zelfde les als bij ChatGPT).
+    console.info(
+      '[Chronicle] bijlagen (gemini):',
+      out.length,
+      'verzameld,',
+      carried,
+      'met bron =',
+      out
+        .filter((a) => a.dataBase64 || a.url)
+        .map((a) => `${a.filename || '?'} → na beurt ${a.afterTurn ?? '?'}`)
+        .join(' | ')
+    );
     return out;
   }
 
-  function collectConversation() {
+  async function collectConversation() {
     const id = conversationIdFromUrl();
     const turns = turnsFromDom();
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };
     }
-    const attachments = attachmentsFromDom();
+    const attachments = await attachmentsFromDom();
     return buildConversation({
       content: transcriptFromTurns(turns, attachments),
       turns,
@@ -308,7 +393,7 @@
       const turns = navigated ? await waitForRender(conv.id, prevFirstPrompt) : null;
       if (!turns || !turns.length) continue;
       prevFirstPrompt = firstUserPrompt(turns) || prevFirstPrompt;
-      const attachments = attachmentsFromDom();
+      const attachments = await attachmentsFromDom();
       out.push(buildConversation({
         content: transcriptFromTurns(turns, attachments),
         turns,
@@ -350,7 +435,7 @@
   });
 
   async function runExport(button) {
-    const conv = collectConversation();
+    const conv = await collectConversation();
     if (conv.error) {
       button.textContent = '✗ ' + conv.error;
       setTimeout(() => window.__chronicleUI.setButtonState(button, 'idle'), 4000);
@@ -382,13 +467,16 @@
       const sig = signature();
       if (!sig || sig === baseline) return;
       baseline = sig;
-      const conv = collectConversation();
-      if (conv.error) {
-        console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
-        return;
-      }
-      console.info('[Chronicle] auto-capture: levering —', (conv.turns || []).length, 'berichten');
-      exportToChronicle(floatingButton, conv);
+      // Asynchroon sinds de blob-bijlagen: bytes lezen kan de waarde pas later
+      // opleveren; alles in de promise om ordering te behouden.
+      collectConversation().then((conv) => {
+        if (conv.error) {
+          console.info('[Chronicle] auto-capture: niets op te halen (', conv.error, ')');
+          return;
+        }
+        console.info('[Chronicle] auto-capture: levering —', (conv.turns || []).length, 'berichten');
+        exportToChronicle(floatingButton, conv);
+      });
     }, 1800);
   }
 
