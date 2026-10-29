@@ -61,6 +61,10 @@
       .replace(NBSP_RE, ' ')
       .replace(/\r\n?/g, '\n')
       .replace(/^\s*(you said|gemini said)\b[:\s]*/i, '')
+      // Gemeten (2026-10-29): de user-prompt staat dubbel in de DOM (a11y-
+      // label + zichtbare tekst leveren allebei dezelfde regel). Een exact
+      // herhaalde kop vouwen we samen: "X\n\nX" → "X".
+      .replace(/^([^\n]{1,4000})\n\n\1$/, '$1')
       .split('\n')
       .map((line) => line.replace(/[ \t]+/g, ' ').replace(/\s+$/, ''))
       .join('\n')
@@ -79,11 +83,6 @@
     return turns;
   }
 
-  function firstUserPrompt(turns) {
-    const turn = turns.find((t) => t.role === 'user' && t.text.trim());
-    return turn ? turn.text.trim() : '';
-  }
-
   /** De gesprekstitel staat in de zijbalk bij de bijbehorende anchor. */
   function titleFromSidebar(id) {
     if (id) {
@@ -98,8 +97,8 @@
   }
 
   /**
-   * Afbeeldingen en bestandschips uit de DOM. Gemini heeft geen leesbare API
-   * voor bijlagen, dus dit is de enige route.
+   * Bijlagen uit de DOM. Gemini heeft geen leesbare API voor bijlagen, dus
+   * dit is de enige route.
    *
    * Gemeten in de echte DOM (console-meting 2026-10-29): geüploade afbeeldingen
    * renderen als `lh3.googleusercontent.com/gg/…`-thumbnail (512 breed, alt
@@ -108,16 +107,25 @@
    * account-avatar onder `lh3…/a/…` (64px, lege alt) en de Google-sparkle-svg
    * (150px) passeren de oude ≥64px-toets en de alt/src-woordenlijst nog.
    *
-   * Elk `.conversation-container` is één beurt-paar (gebruiker + antwoord),
-   * dus de positie is af te leiden zonder te raden over de content: beurt
-   * `i * 2` is de prompt, `i * 2 + 1` het antwoord. Een upload hangt in de
-   * user-query, een gegenereerde afbeelding in het antwoord — zonder `afterTurn`
-   * belandt alles bovenaan de chat in plaats van in het gesprek (gemeten bij
-   * ChatGPT: daar zat dit in dezelfde val).
+   * De chat is GÉVIRTUALISEERD (console-meting 2026-10-29): container 0–8
+   * bestaan altijd als placeholder, maar hun tekst is pas in de DOM zodra ze
+   * door de viewport zijn gegaan — en wordt er daarna weer uit gewist.
+   * Dus kan er niet één keer gelezen worden: `collectRendered()` scrollt de
+   * tijdlijn van boven naar beneden in stappen en bewaart per container de
+   * best-geziene tekst én bijlagen, zodat de later weer gewiste beurten
+   * overleven in de state.
    *
-   * `blob:` kan alleen het content script lezen, niet de service worker, dus de
-   * bytes gaan als base64 in de verwijzing (zelfde route als chatgpt.js) — hier
-   * is geen matching nodig: de blob is zelf de bijlage.
+   * Positie: een upload hangt in de user-query, een gegenereerde afbeelding in
+   * het antwoord — `afterTurn` verwijst naar de echte turns-index (opgebouwd
+   * o.b.v. welke containers zelf wél tekst hadden), niet naar
+   * container-index × 2: bij lege containers breekt die teller. Zonder
+   * `afterTurn` belandt alles bovenaan de chat (zelfde val als bij ChatGPT).
+   *
+   * `blob:` kan alleen het content script lezen, niet de service worker, dus
+   * de bytes gaan als base64 in de verwijzing (zelfde route als chatgpt.js) —
+   * hier is geen matching nodig: de blob is zelf de bijlage. Aan dezelfde
+   * afbeelding in meerdere beurten (zelfde url) hangt één referentie: dedup
+   * op de eerst-geziene beurt.
    */
   async function blobBytes(src) {
     // Blokgewijze base64; één String.fromCharCode.apply op een paar MB blaast
@@ -155,26 +163,52 @@
     );
   }
 
-  async function attachmentsFromDom() {
-    const out = [];
-    // blob-verwijzingen reizen hier los, want attachmentRef gooit onbekende
-    // velden weg: bij de ref-anders dan bytes wordt de blob-url hier bewaard.
-    const pendingBlobs = [];
-    const seen = new Set();
-    const push = (ref) => {
-      const key = ref.url || ref.providerFileId;
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      out.push(ref);
+  /** Dichtstbijzijnde scrollbare ancestor van de beurt-containers. */
+  function findChatScroller() {
+    const container = document.querySelector(SELECTORS.turnContainer);
+    let el = container && container.parentElement;
+    while (el && el !== document.body) {
+      const style = window.getComputedStyle(el);
+      const overflowY = style.overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 10) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  /** Zit dit element in de prompt-kant van de beurt, of in het antwoord? */
+  function sideOf(element) {
+    return element.closest('user-query') || element.closest('.user-query') ? 'user' : 'model';
+  }
+
+  /**
+   * Alle beurten en bijlagen verzamelen over een Gévirtualiseerde tijdlijn.
+   *
+   * Werkwijze (bewezen via console-meting): de containers blijven als
+   * placeholder in de DOM staan, maar hun tekst en afbeeldingen verschijnen
+   * pas wanneer de viewport eraan komt en worden daarna weer gewist. Maar één
+   * keer "alles lezen" is dus fout. Deze functie scrollt van boven naar
+   * beneden en houdt per container de bestgeziene tekst + bijlagen vast —
+   * na het scrollen is de verzamelde state compleet, wat de DOM daarna ook
+   * weer dreigt te wissen.
+   */
+  async function collectRendered() {
+    // Per container-element een record: buiten de viewport gewiste tekst ×
+    // virtualisatie verliezen we niet, want we blijven de bestgeziene waarden
+    // vasthouden. Bijlagen dedupliceren we per verwijzing (blob-url/CDN-url).
+    const state = new Map(); // container → { user, model, atts: Map(key → rec) }
+    const ensure = (container) => {
+      let s = state.get(container);
+      if (!s) {
+        s = { user: '', model: '', atts: new Map() };
+        state.set(container, s);
+      }
+      return s;
     };
-    document.querySelectorAll(SELECTORS.turnContainer).forEach((container, index) => {
-      const userTurn = index * 2;
-      const modelTurn = index * 2 + 1;
-      const afterTurnFor = (element) =>
-        element.closest('user-query') || element.closest('.user-query') ? userTurn : modelTurn;
-      // Blob-verwijzingen hebben geen url/providerFileId en mogen dus niet door
-      // de url-dedup: aparte set op de blob-url zelf.
-      const blobSeen = new Set();
+
+    const collectCandidates = (container, s) => {
       for (const img of container.querySelectorAll('img[src]')) {
         const src = img.currentSrc || img.src;
         if (!src) continue;
@@ -183,81 +217,196 @@
         if (isDecor(src)) continue;
         const alt = (img.alt || '').trim();
         if (/avatar|profile|emoji|icon|logo/i.test(src + ' ' + alt)) continue;
+        // naturalWidth staat pas na het laden; lazy-afbeeldingen mogen dus met
+        // 0 door de toets heen (de decor-geval heeft wél al grootte).
         if ((img.naturalWidth || 0) > 0 && img.naturalWidth < 64) continue;
-        // Gegenereerde afbeelding: bytes lezen en inline meegeven. De
-        // afterTurn-afbakening (model i.p.v. gebruiker) zit in de DOM-positie.
-        if (isBlob) {
-          if (blobSeen.has(src)) continue;
-          blobSeen.add(src);
-          const ref = window.__chronicleUI.attachmentRef({
-            download: 'blob',
-            afterTurn: afterTurnFor(img),
-            filename: nameFromAlt(alt) || 'gegenereerde afbeelding',
-          });
-          out.push(ref);
-          pendingBlobs.push({ ref, blobSrc: src });
+        const key = (isBlob ? 'blob:' : 'img:') + src;
+        const rec = s.atts.get(key);
+        if (rec) {
+          // Lazy-set alt: alsnog proberen de bestandsnaam te verbeteren.
+          if (!rec.alt && alt) rec.alt = alt;
           continue;
         }
-        // Geüploade afbeelding: de thumbnail-url zelf is fetchbaar door de
-        // service worker (host-permissie googleusercontent bestaat).
-        push(
-          window.__chronicleUI.attachmentRef({
-            url: src,
-            download: 'direct',
-            afterTurn: afterTurnFor(img),
-            filename: nameFromAlt(alt),
-          })
-        );
+        s.atts.set(key, { kind: isBlob ? 'blob' : 'img', src, alt, side: sideOf(img), bytes: null, failed: false });
       }
       for (const anchor of container.querySelectorAll('a[href]')) {
         const href = anchor.href;
         if (!href || !/^https?:/i.test(href)) continue;
         if (!/googleusercontent|contribution\.usercontent|drive\.google/i.test(href)) continue;
         const label = (anchor.getAttribute('download') || anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
-        push(window.__chronicleUI.attachmentRef({
-          url: href,
-          download: 'direct',
-          afterTurn: afterTurnFor(anchor),
-          filename: label && label.length > 2 ? label : null,
-        }));
+        const key = 'a:' + href;
+        const rec = s.atts.get(key);
+        if (rec) {
+          if (!rec.label && label) rec.label = label;
+          continue;
+        }
+        s.atts.set(key, { kind: 'anchor', src: href, label, side: sideOf(anchor), bytes: null, failed: false });
       }
-    });
-    // Blob-bytes ophalen en op de verwijzing zetten. Fouten worden per ref
-    // weggeschreven zodat één kapotte blob de rest niet slikt.
-    for (const { ref, blobSrc } of pendingBlobs) {
-      try {
-        const bytes = await blobBytes(blobSrc);
-        ref.dataBase64 = bytes.base64;
-        ref.mimeType = bytes.mimeType;
-        ref.size = bytes.size;
-      } catch (err) {
-        console.info('[Chronicle] gemini blob onleesbaar:', String((err && err.message) || err));
+    };
+
+    const scan = () => {
+      for (const container of document.querySelectorAll(SELECTORS.turnContainer)) {
+        const s = ensure(container);
+        const userText = cleanText(firstMatchText(container, SELECTORS.userQuery));
+        if (userText && userText.length > s.user.length) s.user = userText;
+        const modelText = cleanText(firstMatchText(container, SELECTORS.modelResponse));
+        if (modelText && modelText.length > s.model.length) s.model = modelText;
+        collectCandidates(container, s);
+      }
+    };
+
+    // Blob-bytes ophalen zodra we ze zien — een blob-url sterft bij het
+    // uit-fokusen van zijn container, dus nóoit later opnieuw proberen.
+    const drainBlobs = async () => {
+      for (const s of state.values()) {
+        for (const rec of s.atts.values()) {
+          if (rec.kind !== 'blob' || rec.bytes || rec.failed) continue;
+          try {
+            rec.bytes = await blobBytes(rec.src);
+          } catch (err) {
+            rec.failed = true;
+            console.info(
+              '[Chronicle] gemini blob onleesbaar:',
+              rec.src.slice(0, 48),
+              String((err && err.message) || err)
+            );
+          }
+        }
+      }
+    };
+
+    // Pas op: het scrollen zelf triggert MutationObserver en auto-capture;
+    // revealing-uitgeschakeld via de flag hieronder.
+    revealing = true;
+    try {
+      scan();
+      await drainBlobs();
+      const scroller = findChatScroller();
+      if (scroller) {
+        scroller.scrollTop = 0;
+        await sleep(300);
+        scan();
+        await drainBlobs();
+        let stable = 0;
+        let prevFilled = -1;
+        for (let i = 0; i < 300; i++) {
+          const prev = scroller.scrollTop;
+          scroller.scrollTop = Math.min(
+            prev + Math.max(Math.round(scroller.clientHeight * 0.7), 200),
+            scroller.scrollHeight
+          );
+          await sleep(350);
+          scan();
+          await drainBlobs();
+          const filled = Array.from(state.values())
+            .reduce((n, s) => n + (s.user ? 1 : 0) + (s.model ? 1 : 0), 0);
+          const atBottom =
+            scroller.scrollTop <= prev + 2 ||
+            scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
+          if (filled === prevFilled) stable += 1;
+          else {
+            stable = 0;
+            prevFilled = filled;
+          }
+          if (atBottom && stable >= 3) break;
+        }
+      }
+      scan();
+      await drainBlobs();
+    } finally {
+      revealing = false;
+      if (armed) {
+        // Ravenbaseline op de nieuwe stand: zoveel leverde de export op —
+        // auto-capture opnieuw vergelijken i.p.v. meteen "nieuw" te melden.
+        baseline = signature();
       }
     }
-    const carried = out.filter((ref) => ref.dataBase64 || ref.url).length;
-    // Diagnose: zonder deze regel is achteraf niet te zien of het probleem in
-    // het verzamelen of in de levering zit (zelfde les als bij ChatGPT).
+
+    // Samenstelling: eerst beurten (met echte index), daarna bijlagen gekleefd
+    // aan hun eigen beurt — mapping op de turns-array, niet op container-index.
+    const ordered = Array.from(document.querySelectorAll(SELECTORS.turnContainer));
+    const turns = [];
+    const turnIndex = new Map(); // container → { user, model, before }
+    for (const container of ordered) {
+      const s = state.get(container);
+      const userText = s && s.user;
+      const modelText = s && s.model;
+      const before = turns.length;
+      const idxUser = userText ? turns.length : null;
+      if (userText) turns.push({ role: 'user', text: userText });
+      const idxModel = modelText ? turns.length : null;
+      if (modelText) turns.push({ role: 'assistant', text: modelText });
+      turnIndex.set(container, { user: idxUser, model: idxModel, before });
+    }
+
+    const afterTurnFor = (container, side) => {
+      const idx = turnIndex.get(container);
+      if (!idx) return null;
+      const own = side === 'user' ? idx.user : idx.model;
+      if (own !== null && own !== undefined) return own;
+      // De beurt bestaat niet (prompt zonder tekst/foto-antwoord zonder
+      // tekst): plak aan de laatste beurt hiervoor; op de allereerste
+      // container betekent dat bovenaan.
+      return idx.before > 0 ? idx.before - 1 : null;
+    };
+
+    const seen = new Set();
+    const attachments = [];
+    for (const container of ordered) {
+      const s = state.get(container);
+      if (!s) continue;
+      for (const rec of s.atts.values()) {
+        const key = rec.kind === 'blob' ? 'blob:' + rec.src : rec.src;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (rec.kind === 'blob') {
+          const ref = window.__chronicleUI.attachmentRef({
+            download: 'blob',
+            afterTurn: afterTurnFor(container, rec.side),
+            filename: nameFromAlt(rec.alt) || 'gegenereerde afbeelding',
+          });
+          if (rec.bytes) {
+            ref.dataBase64 = rec.bytes.base64;
+            ref.mimeType = rec.bytes.mimeType;
+            ref.size = rec.bytes.size;
+          }
+          attachments.push(ref);
+          continue;
+        }
+        attachments.push(window.__chronicleUI.attachmentRef({
+          url: rec.src,
+          download: 'direct',
+          afterTurn: afterTurnFor(container, rec.side),
+          filename: rec.kind === 'anchor'
+            ? (rec.label && rec.label.length > 2 ? rec.label : null)
+            : nameFromAlt(rec.alt),
+        }));
+      }
+    }
+
+    const carried = attachments.filter((a) => a.dataBase64 || a.url).length;
     console.info(
       '[Chronicle] bijlagen (gemini):',
-      out.length,
+      attachments.length,
       'verzameld,',
       carried,
-      'met bron =',
-      out
+      'met bron |',
+      turns.length,
+      'beurten =',
+      attachments
         .filter((a) => a.dataBase64 || a.url)
         .map((a) => `${a.filename || '?'} → na beurt ${a.afterTurn ?? '?'}`)
         .join(' | ')
     );
-    return out;
+    return { turns, attachments };
   }
 
   async function collectConversation() {
     const id = conversationIdFromUrl();
-    const turns = turnsFromDom();
+    const { turns, attachments } = await collectRendered();
     if (!turns.length) {
       return { error: 'geen berichten gevonden op deze pagina' };
     }
-    const attachments = await attachmentsFromDom();
     return buildConversation({
       content: transcriptFromTurns(turns, attachments),
       turns,
@@ -319,7 +468,6 @@
     }
     return Array.from(merged.values());
   }
-
   async function scrollToFindAnchor(id) {
     const sel = `a[href="/app/${id}"]`;
     let anchor = document.querySelector(sel);
@@ -347,8 +495,14 @@
     return true;
   }
 
-  /** Wacht tot de doelconversatie gerenderd én stabiel is; anders null. */
-  async function waitForRender(targetId, prevFirstPrompt) {
+  /**
+   * Wacht tot de doelconversatie zichtbaar is en de zichtbare beurt-staart
+   * stabiel is. De eigennaamse beurten moeten dáárna via collectRendered()
+   * uit de virtualistie-scroll komen; hier gaat het alleen om de
+   * stale-body-guard (het SPA-vraagstuk: de URL is al het nieuwe gesprek, de
+   * DOM toont nog even het oude).
+   */
+  async function waitForConversation(targetId) {
     const deadline = Date.now() + 20000;
     let lastSig = '';
     let stableHits = 0;
@@ -357,26 +511,17 @@
       if (conversationIdFromUrl() !== targetId) continue;
       const turns = turnsFromDom();
       if (!turns.length) continue;
-      const prompt = firstUserPrompt(turns);
-      // De eerste prompt moet bestaan én verschillen van het vorige gesprek:
-      // dat is de guard tegen het "stale body"-probleem (de SPA toont nog even
-      // het vorige gesprek).
-      if (!prompt) continue;
-      if (prevFirstPrompt && prompt === prevFirstPrompt) continue;
-      const sig = turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
+      const sig =
+        turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
       if (sig === lastSig) {
         stableHits += 1;
-        if (stableHits >= 1) return turns;
+        if (stableHits >= 1) return true;
       } else {
         stableHits = 0;
         lastSig = sig;
       }
     }
-    if (conversationIdFromUrl() === targetId) {
-      const turns = turnsFromDom();
-      if (turns.length) return turns;
-    }
-    return null;
+    return conversationIdFromUrl() === targetId && turnsFromDom().length > 0;
   }
 
   async function collectBulkConversations(onProgress) {
@@ -385,15 +530,33 @@
       throw new Error('geen gesprekken in de zijbalk — open de linkerzijbalk');
     }
     const out = [];
-    let prevFirstPrompt = '';
+    // Stale-body-guard: het SPA-vraagstuk is dat de DOM nog even het vorige
+    // gesprek toont nadat de URL al wisselde. Een volledig gelijk
+    // beurten-signatuur (aantal + tekensamenstelling) betekent vrijwel altijd
+    // dat het oude gesprek nog op het scherm stond — dan skippen en wachten.
+    let prevSig = '';
     for (let i = 0; i < list.length; i++) {
       const conv = list[i];
       onProgress && onProgress(i + 1, list.length, conv.title);
       const navigated = await navigateTo(conv);
-      const turns = navigated ? await waitForRender(conv.id, prevFirstPrompt) : null;
-      if (!turns || !turns.length) continue;
-      prevFirstPrompt = firstUserPrompt(turns) || prevFirstPrompt;
-      const attachments = await attachmentsFromDom();
+      if (!navigated || !(await waitForConversation(conv.id))) continue;
+      const { turns, attachments } = await collectRendered();
+      if (!turns.length) continue;
+      const sig = turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
+      if (prevSig && sig === prevSig) {
+        console.info('[Chronicle] gemini bulk: overslaan (stale body):', conv.title);
+        continue;
+      }
+      prevSig = sig;
+      console.info(
+        '[Chronicle] gemini bulk:',
+        (conv.title || '(zonder titel)').slice(0, 40),
+        '→',
+        turns.length,
+        'beurten,',
+        attachments.length,
+        'bijlagen'
+      );
       out.push(buildConversation({
         content: transcriptFromTurns(turns, attachments),
         turns,
@@ -454,14 +617,21 @@
   let armed = false;
   let baseline = '';
   let settleTimer = null;
+  // Tijdens collectRendered() scrollen we door de tijdlijn; elke stap triggert
+  // de observer en dus scheduleCapture op zichzelf. Terwijl de collectie draait
+  // negeren we captures — de baseline wordt na afloop op de nieuwe stand gezet.
+  let revealing = false;
 
+  // Bewust zonder reveal-scroll: dit is de snelle wijzigingsdetector voor de
+  // observer. Groei van een lopend antwoord gebeurt aan de onderkant (zichtbaar
+  // en gerenderd), dus de zichtbare staart is voldoende als baseline.
   function signature() {
     const turns = turnsFromDom();
     return turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
   }
 
   function scheduleCapture() {
-    if (!armed) return;
+    if (!armed || revealing) return;
     if (settleTimer) clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
       const sig = signature();
