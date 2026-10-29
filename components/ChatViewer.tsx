@@ -294,14 +294,14 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   // Bijlagen met een marker in de tekst horen in het gesprek zelf, niet in de
   // lijst onderaan. `[Bijlage: naam]` wordt door de plugin achter de beurt gezet
   // waarin het bestand ontstond (ChatGPT schrijft daar een tool-bericht).
-  // Bijlagen met een marker in de tekst horen in het gesprek zelf, niet in de
-  // lijst onderaan. `[Bijlage: naam]` wordt door de plugin achter de beurt gezet
-  // waarin het bestand ontstond (ChatGPT schrijft daar een tool-bericht).
   // Vergelijken gaat op een genormaliseerde naam: de opslag saneert bestanden
   // (`3gstar(1).png` → `3gstar_1_.png`), en dan mag de marker niet losraken.
+  // De extensie tellen we niet mee: ChatGPT-markers dragen de volledige
+  // bestandsnaam, maar bij Gemini komt de markernaam uit de alt-tekst (zonder
+  // extensie) terwijl de service worker bij het uploaden `.jpg`/`.png` toevoegt.
   const attachments = chat.capture?.attachments || [];
   const attachmentKey = (name?: string) =>
-    String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    String(name || '').trim().replace(/\.[a-z0-9]{1,5}$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const markerKeysIn = (text: string) =>
     Array.from(text.matchAll(/\[Bijlage: ([^\]]+)\]/g)).map((hit) => attachmentKey(hit[1]));
   const placedKeys = new Set<string>();
