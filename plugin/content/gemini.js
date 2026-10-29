@@ -395,7 +395,7 @@
           afterTurn: afterTurnFor(container, rec.side),
           filename: rec.kind === 'anchor'
             ? (rec.label && rec.label.length > 2 ? rec.label : null)
-            : nameFromAlt(rec.alt),
+            : (nameFromAlt(rec.alt) || 'gemini-upload'),
         }));
       }
     }
