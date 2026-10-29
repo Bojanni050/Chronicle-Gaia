@@ -344,14 +344,30 @@
       if (!idx) return null;
       const own = side === 'user' ? idx.user : idx.model;
       if (own !== null && own !== undefined) return own;
-      // De beurt bestaat niet (prompt zonder tekst/foto-antwoord zonder
-      // tekst): plak aan de laatste beurt hiervoor; op de allereerste
-      // container betekent dat bovenaan.
+      if (side === 'model' && idx.user !== null && idx.user !== undefined) {
+        // Antwoord zonder tekst (alleen de afbeelding): de beurt bestaat
+        // niet op de turns-array, maar de foto hoort wél bij dát antwoord —
+        // dus aan de eigen prompt-beurt plakken i.p.v. bovenaan verdwijnen.
+        return idx.user;
+      }
+      // De beurt bestaat niet (prompt zonder tekst): plak aan de laatste
+      // beurt hiervoor; op de allereerste container betekent dat bovenaan.
       return idx.before > 0 ? idx.before - 1 : null;
     };
 
     const seen = new Set();
     const attachments = [];
+    // Middiagnose: per container de beurtindex, zodat een plaatsingsvraag uit
+    // één logregel te beantwoorden is (bijv. "waarom hangt de foto op ?").
+    console.info(
+      '[Chronicle] gemini map:',
+      ordered
+        .map((c, i) => {
+          const idx = turnIndex.get(c);
+          return `c${i} u=${idx.user ?? '-'} m=${idx.model ?? '-'}`;
+        })
+        .join(' | ')
+    );
     for (const container of ordered) {
       const s = state.get(container);
       if (!s) continue;
