@@ -7,7 +7,8 @@ export enum SourceType {
   QWEN = 'Qwen',
   LOCAL = 'Local LLM',
   OTHER = 'Other',
-  MANUAL = 'Manual'
+  MANUAL = 'Manual',
+  WEB = 'Web'
 }
 
 export enum ItemType {

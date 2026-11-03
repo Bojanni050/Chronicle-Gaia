@@ -133,6 +133,7 @@ export function toSourceProvider(source?: string): string | undefined {
     'local llm': 'local',
     other: 'other',
     manual: 'manual',
+    web: 'web',
   };
   return known[key] || key.replace(/\s+/g, '-');
 }

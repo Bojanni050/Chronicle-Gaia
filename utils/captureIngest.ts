@@ -109,6 +109,7 @@ export function toSourceType(sourceProvider?: string): string {
     local: 'Local LLM',
     other: 'Other',
     manual: 'Manual',
+    web: 'Web',
   };
   return known[key] || 'Other';
 }

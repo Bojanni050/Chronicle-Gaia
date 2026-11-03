@@ -568,15 +568,84 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.runtime.onStartup.addListener(() => { flushQueue(null); });
 chrome.runtime.onInstalled.addListener(() => { flushQueue(null); });
 
-// De toolbar-knop: alleen de provider-scripts kunnen het gesprek ophalen
-// (same-origin cookies), dus de actie vraagt het actieve tab het gesprek te
-// exporteren. Werkt ook als de zwevende knop door de site-CSS wordt bedekt.
+// Alleen deze vier providers hebben een altijd-geladen content script
+// (manifest.json content_scripts). Elke andere pagina krijgt in plaats
+// daarvan de web-clip: op dat moment pas ingespoten (activeTab), dus zonder
+// brede host_permissions.
+const PROVIDER_HOSTS = ['claude.ai', 'chatgpt.com', 'gemini.google.com', 'chat.mistral.ai'];
+
+function isProviderUrl(url) {
+  try {
+    return PROVIDER_HOSTS.includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function flashBadge(text, color) {
+  chrome.action.setBadgeBackgroundColor({ color }).catch(() => {});
+  chrome.action.setBadgeText({ text }).catch(() => {});
+  setTimeout(() => chrome.action.setBadgeText({ text: '' }).catch(() => {}), 3000);
+}
+
+/**
+ * Bouwt en levert de web-clip af nadat content/webclip.js de pagina heeft
+ * omgezet. sourceProvider 'web' groepeert onder SourceType.WEB (zie
+ * utils/captureIngest.ts toSourceType) in plaats van onder "Other".
+ */
+async function deliverWebClip({ title, url, markdown }) {
+  const result = await deliver({
+    content: markdown,
+    title,
+    url,
+    sourceProvider: 'web',
+    occurredAt: new Date().toISOString(),
+  });
+  flashBadge(result.ok ? '✓' : '×', result.ok ? '#3f6d3f' : '#b3463f');
+  // Een × zonder logregel is onmogelijk te debuggen: deliver() faalt hier
+  // meestal stil (Chronicle niet bereikbaar, 401/422, ...), dus die reden
+  // hoort altijd zichtbaar te zijn, niet alleen het rode vlaggetje.
+  if (!result.ok) {
+    console.warn('[Chronicle] web-clip levering mislukt:', result.error || result);
+  }
+  return result;
+}
+
+// De toolbar-knop: op een AI-provider haalt het altijd-geladen content
+// script het gesprek op (same-origin cookies); op elke andere pagina wordt
+// de web-clip-extractor eenmalig ingespoten (activeTab-gebaseerde injectie,
+// geen content script dat overal meeluistert).
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab || !tab.id) return;
+  if (tab.url && isProviderUrl(tab.url)) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'chronicle-click' });
+    } catch {
+      // Content script nog niet klaar — stil negeren, geen alert vanuit de worker.
+    }
+    return;
+  }
+  if (!tab.url || !/^https?:/.test(tab.url)) return; // chrome://, extensiepagina's, etc.
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'chronicle-click' });
-  } catch {
-    // Geen content script op dit tab (bijv. geen claude.ai/chatgpt.com) —
-    //Chrome kan hier geen alert tonen vanuit de worker; stil negeren.
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['vendor/turndown.js', 'content/webclip.js'],
+    });
+  } catch (err) {
+    console.warn('[Chronicle] web-clip injectie mislukt:', String((err && err.message) || err));
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message && message.type === 'chronicle-webclip-result') {
+    if (!message.ok) {
+      console.warn('[Chronicle] web-clip extractie mislukt:', message.error);
+      flashBadge('×', '#b3463f');
+      return;
+    }
+    deliverWebClip(message).catch((err) => {
+      console.warn('[Chronicle] web-clip levering mislukt:', String((err && err.message) || err));
+      flashBadge('×', '#b3463f');
+    });
   }
 });

@@ -1,6 +1,9 @@
 node_modules/
 dist/
+dist_firefox/
+dist_safari/
 release/
+clipper/builds/
 .env.local
 .env
 *.log
