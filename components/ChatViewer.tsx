@@ -348,7 +348,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
         </div>
       )}
 
-      <div className="px-10 pt-6 pb-4 border-b shrink-0 bg-paper dark:bg-stone-900 border-sandstone/50 dark:border-stone-800 z-10">
+      <div className="px-10 pt-8 pb-6 border-b shrink-0 bg-paper dark:bg-stone-900 border-sandstone/50 dark:border-stone-800 z-10">
         <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-4 min-h-[32px]">
                 <div>
@@ -368,7 +368,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                              {isNote ? <PencilIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
                          </div>
                          <div>
-                            <h1 className="text-3xl sm:text-4xl font-semibold text-earth-dark dark:text-white font-display tracking-tight leading-tight">{chat.title}</h1>
+                             <h1 className="text-4xl sm:text-5xl font-light text-earth-dark dark:text-white font-display tracking-[-0.04em] leading-tight">{chat.title}</h1>
                             <div className="flex items-center gap-2 text-[10px] font-black text-moss-brown uppercase tracking-[0.2em] mt-1">
                                 <span>{isNote ? 'PERSONAL SYNTHESIS' : chat.source}</span>
                                 <span>•</span>
@@ -443,7 +443,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scroll-smooth">
         <ErrorBoundary>
           <div className="max-w-4xl mx-auto px-8 py-10 space-y-12">
-              <div className={`border-2 rounded-3xl p-8 relative shadow-sm ${isNote ? 'bg-amber-50/30 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50' : 'bg-slate-50/50 border-sandstone/30 dark:bg-stone-800/50 dark:border-stone-700'}`}>
+               <div className={`border rounded-xl p-8 relative shadow-sm ${isNote ? 'bg-amber-50/30 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50' : 'bg-slate-50/50 border-sandstone/30 dark:bg-stone-800/50 dark:border-stone-700'}`}>
                   <div className={`absolute -top-3 left-8 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white shadow-md ${isNote ? 'bg-amber-500' : 'bg-sage-green'}`}>Abstract</div>
                   <div className="flex gap-4">
                       <div className="flex-1">

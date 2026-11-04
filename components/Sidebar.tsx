@@ -24,6 +24,7 @@ interface SidebarProps {
   activeRelatedTags?: string[];
   showArchived: boolean;
   onShowArchivedChange: (show: boolean) => void;
+  onNew: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -45,7 +46,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDateRangeChange,
   activeRelatedTags = [],
   showArchived,
-  onShowArchivedChange
+  onShowArchivedChange,
+  onNew
 }) => {
   const [showQuickFilters, setShowQuickFilters] = useState(false);
   const MIN_WIDTH = 240;
@@ -171,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       ref={asideRef}
       style={{ width: `${width}px` }}
-      className="max-w-[50vw] flex flex-col shrink-0 font-sans relative transition-colors"
+      className="max-w-[50vw] flex flex-col shrink-0 font-sans relative transition-colors bg-[#FCFCF9] dark:bg-stone-900 border-x border-sandstone/60 dark:border-stone-800"
     >
 
       {/* Resize handle */}
@@ -183,8 +185,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="h-full w-full transition-colors group-hover:bg-sage-green/40" />
       </div>
       
-      {/* Top Search & Filter Header */}
-      <div className="px-2 pb-3 pt-1 space-y-3 z-10">
+      {/* List header */}
+      <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-3 border-b border-sandstone/70 dark:border-stone-800">
+        <div className="leading-tight">
+          <h2 className="text-lg font-bold tracking-tight text-earth-dark dark:text-white">All objects</h2>
+          <p className="text-[10px] uppercase tracking-widest text-moss-brown mt-1">{filteredChats.length} objects</p>
+        </div>
+        <button
+          onClick={onNew}
+          className="shrink-0 rounded-lg bg-[#394239] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#2C362C]"
+        >
+          New
+        </button>
+      </div>
+
+      <div className="px-3 pb-3 pt-3 space-y-3 z-10">
         
         <div className="flex gap-2">
             <div className="relative flex-1">

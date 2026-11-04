@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
-import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon, PencilIcon } from './components/Icons';
+import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon, PencilIcon, MessageIcon } from './components/Icons';
 import { UploadModal, SourceFileRef, AttachmentRef } from './components/UploadModal';
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
@@ -578,43 +578,36 @@ const App: React.FC = () => {
 
   const navItem = (active: boolean) =>
     `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${active ? 'bg-sandstone/70 dark:bg-stone-800 text-earth-dark dark:text-white' : 'text-moss-brown dark:text-stone-400 hover:bg-hover-bg dark:hover:bg-stone-800/60'}`;
+  const navCount = 'ml-auto text-xs font-medium text-moss-brown/70 dark:text-stone-500';
   const panel = 'flex-1 flex overflow-hidden relative rounded-2xl bg-paper dark:bg-stone-900 border border-sandstone/60 dark:border-stone-800';
+  const typeRow = (active: boolean) =>
+    `w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors ${active ? 'bg-sandstone/70 dark:bg-stone-800 text-earth-dark dark:text-white font-semibold' : 'text-moss-brown dark:text-stone-400 hover:bg-hover-bg dark:hover:bg-stone-800/60'}`;
 
   return (
     <div className={`flex h-screen bg-warm-beige dark:bg-stone-950 text-earth-dark dark:text-stone-100 transition-colors duration-300 overflow-hidden ${isMacOS ? 'pt-4' : ''}`}>
 
-      <nav className={`w-60 shrink-0 flex flex-col gap-4 px-3 pb-3 font-sans ${isMacOS ? 'pt-8' : 'pt-4'}`}>
-        <div className="flex items-center gap-3 px-2 cursor-pointer" onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard', viewingChat: null }))}>
-          <div className="bg-[#394239] p-2 rounded-xl text-white"><DatabaseIcon className="h-5 w-5" /></div>
-          <div className="flex flex-col">
-            <h1 className="text-lg font-bold tracking-tight text-earth-dark dark:text-white leading-none">Chronicle</h1>
-            <p className="text-[10px] text-moss-brown dark:text-stone-500 font-medium uppercase tracking-widest mt-1">Archive & Synthesis</p>
-          </div>
+      <nav className={`w-60 shrink-0 flex flex-col gap-5 px-3 pb-3 font-sans ${isMacOS ? 'pt-8' : 'pt-4'}`}>
+        <div className="flex items-center gap-2.5 px-2 pt-1 cursor-pointer" onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard', viewingChat: null }))}>
+          <div className="bg-[#394239] p-1.5 rounded-lg text-white"><DatabaseIcon className="h-4 w-4" /></div>
+          <h1 className="text-base font-bold tracking-tight text-earth-dark dark:text-white leading-none">Chronicle</h1>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={handleCreateNote}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#394239] hover:bg-[#2C362C] text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
-          >
-            <PencilIcon className="w-4 h-4" /> Note
+        <div className="flex flex-col gap-0.5">
+          <button onClick={handleCreateNote} className={navItem(false)} title="New synthesis note">
+            <PencilIcon className="w-4 h-4" /> New note
           </button>
           <button
             onClick={() => setState(prev => ({ ...prev, isUploading: true }))}
-            title="Import Log"
-            className="px-3 rounded-xl border border-sandstone dark:border-stone-700 bg-paper dark:bg-stone-800 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors"
+            className={navItem(false)}
+            title="Import chat log"
           >
-            <PlusIcon className="w-4 h-4" />
+            <PlusIcon className="w-4 h-4" /> Import log
           </button>
         </div>
 
         <div className="flex flex-col gap-0.5">
           <button onClick={() => setState(prev => ({ ...prev, viewMode: 'dashboard' }))} className={navItem(state.viewMode === 'dashboard')}>
             <ChartIcon className="w-4 h-4" /> Insights
-          </button>
-          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive' }))} className={navItem(state.viewMode === 'archive')}>
-            <DatabaseIcon className="w-4 h-4" /> Knowledge Base
-            <span className="ml-auto text-xs font-medium text-moss-brown/70">{state.chats.filter(c => !c.archived).length}</span>
           </button>
           <button onClick={() => setState(prev => ({ ...prev, viewMode: 'search' }))} className={navItem(state.viewMode === 'search')}>
             <SearchIcon className="w-4 h-4" /> Power Search
@@ -624,7 +617,36 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <div className="mt-auto">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-moss-brown/80 dark:text-stone-500 px-3 mb-1">Item types</p>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive', selectedType: 'all' }))} className={typeRow(state.viewMode === 'archive' && state.selectedType === 'all')}>
+            <DatabaseIcon className="w-4 h-4" /> All objects
+            <span className={navCount}>{state.chats.filter(c => !c.archived).length}</span>
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive', selectedType: ItemType.CHAT }))} className={typeRow(state.viewMode === 'archive' && state.selectedType === ItemType.CHAT)}>
+            <MessageIcon className="w-4 h-4" /> Chat logs
+            <span className={navCount}>{state.chats.filter(c => !c.archived && c.type === ItemType.CHAT).length}</span>
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive', selectedType: ItemType.NOTE }))} className={typeRow(state.viewMode === 'archive' && state.selectedType === ItemType.NOTE)}>
+            <PencilIcon className="w-4 h-4" /> Synthesis notes
+            <span className={navCount}>{state.chats.filter(c => !c.archived && c.type === ItemType.NOTE).length}</span>
+          </button>
+        </div>
+
+        <div className="mt-auto flex flex-col gap-1">
+          <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-sandstone/40 dark:bg-stone-800/50 border border-sandstone/50 dark:border-stone-800">
+            {state.settings.userAvatar ? (
+              <img src={state.settings.userAvatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-[#394239] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                {(state.settings.userName || 'B').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 leading-tight">
+              <p className="text-sm font-semibold truncate text-earth-dark dark:text-white">{state.settings.userName || 'Personal workspace'}</p>
+              <p className="text-[10px] text-moss-brown dark:text-stone-500 truncate">{state.chats.filter(c => !c.archived).length} objects · archive</p>
+            </div>
+          </div>
           <button onClick={() => setState(prev => ({ ...prev, isSettingsOpen: true }))} className={navItem(false)}>
             <SettingsIcon className="w-4 h-4" /> Settings
           </button>
@@ -688,11 +710,12 @@ const App: React.FC = () => {
               dateEnd={state.searchFilters.dateEnd}
               onDateRangeChange={(start, end) => setState(prev => ({ ...prev, searchFilters: { ...prev.searchFilters, dateStart: start, dateEnd: end } }))}
               activeRelatedTags={state.relatedTags}
-              showArchived={state.showArchived}
-              onShowArchivedChange={(show) => setState(prev => ({ ...prev, showArchived: show }))}
-            />
+               showArchived={state.showArchived}
+               onShowArchivedChange={(show) => setState(prev => ({ ...prev, showArchived: show }))}
+               onNew={handleCreateNote}
+             />
 
-            <main className="flex-1 min-w-0 bg-paper dark:bg-stone-900 border border-sandstone/60 dark:border-stone-800 rounded-2xl relative overflow-hidden">
+            <main className="flex-1 min-w-0 bg-[#F5F4EF] dark:bg-stone-900 border border-sandstone/60 dark:border-stone-800 rounded-2xl relative overflow-hidden">
               {state.viewingChat ? (
                 <ChatViewer 
                   chat={state.viewingChat} 

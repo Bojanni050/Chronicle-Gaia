@@ -1,5 +1,17 @@
 # Walkthrough — Chronicle-Gaia
 
+## 2026-11-04 (Mindstack-stijl interface)
+
+- Findings: Chronicle had the right three-pane foundation, but the navigation was organized as a compact utility menu and the archive list had no distinct object header. The reference uses a quieter workspace rail, explicit object-type counts, a strong `All objects` list header, and a more editorial reading pane.
+- Conclusions: Keep all existing navigation, filtering, archive, and capture behavior intact; change only the hierarchy, spacing, borders, selected-row treatment, and typography so the reference's calm knowledge-workspace feel carries over without introducing a new dependency.
+- Actions: Updated `App.tsx` with a simplified Chronicle rail, object-type navigation/counts, and workspace identity block; updated `components/Sidebar.tsx` with the `All objects`/count/New header; softened `components/ChatCard.tsx`, `components/RightSidebar.tsx`, and `components/ChatViewer.tsx` toward the reference's restrained list, related-object, and editorial reader styles; validated with `npx vite build`.
+
+## 2026-11-04 (Lichtere objectlijstkolom)
+
+- Findings: De objectlijstkolom had vrijwel dezelfde lichte achtergrond als het leesvenster, waardoor de drie kolommen onvoldoende van elkaar te onderscheiden waren.
+- Conclusions: De tweede kolom krijgt een bijna-witte paper-tint met subtiele verticale randen; het leesvenster krijgt een iets warmere tint zodat de lijst duidelijk lichter blijft zonder extra layout-elementen.
+- Actions: `components/Sidebar.tsx` en `App.tsx` aangepast met afzonderlijke achtergrondkleuren; functionaliteit bleef ongewijzigd.
+
 ## 2026-10-05 (Capture-verbinding Chronicle → Foundation, fase 0-1)
 
 - Findings:

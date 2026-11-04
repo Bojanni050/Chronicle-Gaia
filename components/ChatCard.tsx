@@ -46,10 +46,10 @@ export const ChatCard: React.FC<ChatCardProps> = ({ chat, onClick, isActive, onT
   return (
     <div
       onClick={onClick}
-      className={`relative px-4 py-3.5 cursor-pointer transition-colors group border-b border-sandstone/60 dark:border-stone-800 last:border-b-0 ${
+      className={`relative px-4 py-4 cursor-pointer transition-colors group border-b border-sandstone/70 dark:border-stone-800 last:border-b-0 ${
         isActive
-          ? 'bg-paper dark:bg-stone-900 rounded-xl border-transparent ring-1 ring-sage-green shadow-sm'
-          : 'hover:bg-hover-bg/70 dark:hover:bg-stone-900/60 rounded-xl border-b-sandstone/60'
+          ? 'bg-sandstone/45 dark:bg-stone-800/80 border-transparent'
+          : 'hover:bg-hover-bg/70 dark:hover:bg-stone-900/60'
       }`}
     >
       <h3 className="text-sm font-bold line-clamp-1 leading-snug text-earth-dark dark:text-stone-100 font-sans">
@@ -80,7 +80,7 @@ export const ChatCard: React.FC<ChatCardProps> = ({ chat, onClick, isActive, onT
             );
           })}
         </div>
-        <span className="text-[11px] text-moss-brown/80 dark:text-stone-500 shrink-0">{dateStr}</span>
+        <span className="text-[10px] uppercase tracking-wider text-moss-brown/80 dark:text-stone-500 shrink-0">{dateStr}</span>
       </div>
     </div>
   );

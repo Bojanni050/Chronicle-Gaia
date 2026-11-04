@@ -30,12 +30,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between p-4 border-b border-sandstone dark:border-stone-800 bg-paper dark:bg-stone-900">
+         <div className="flex items-center justify-between px-4 py-3 border-b border-sandstone dark:border-stone-800 bg-paper dark:bg-stone-900">
            <div className="flex items-center gap-2 text-earth-dark dark:text-white font-bold">
-              <div className="bg-sage-green/20 p-1.5 rounded-lg text-sage-green">
-                 <TagIcon />
-              </div>
-              <h3>Related Chats</h3>
+               <TagIcon className="w-4 h-4 text-sage-green" />
+               <h3 className="text-sm font-semibold">Related objects</h3>
            </div>
            <button onClick={onClose} className="text-moss-brown hover:text-earth-dark dark:hover:text-white dark:hover:text-white transition-colors">
               <XIcon />
@@ -44,7 +42,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
         <div className="p-4 bg-sandstone/10 dark:bg-stone-800/30 border-b border-sandstone dark:border-stone-800">
            <div className="flex justify-between items-center mb-2">
-              <p className="text-[10px] uppercase font-bold text-moss-brown tracking-widest">Active Filters</p>
+            <p className="text-[10px] uppercase font-bold text-moss-brown tracking-widest">Related objects</p>
               {selectedTags.length > 0 && (
                   <button onClick={onClose} className="text-[10px] text-sage-green hover:underline">Done</button>
               )}
