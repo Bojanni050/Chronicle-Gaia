@@ -508,10 +508,24 @@ Return a JSON object with:
       });
       const meta = JSON.parse(response.text || '{}');
       if (!meta.suggestedTitle) return;
-      await pool.query('UPDATE chats SET title = $1, summary = $2, tags = $3 WHERE id = $4', [
+      // Embedding zoals bij de handmatige import (content + summary), zodat
+      // gecapturede gesprekken ook in semantisch zoeken en ChroniclePulse
+      // meedoen. Een mislukte embedding mag de titel niet blokkeren.
+      let embedding = null;
+      try {
+        const emb = await ai.models.embedContent({
+          model: 'gemini-embedding-001',
+          contents: [{ parts: [{ text: `${row.content || ''}\n${meta.summary || ''}`.substring(0, 9000) }] }],
+        });
+        embedding = emb.embeddings?.[0]?.values || null;
+      } catch (embErr) {
+        console.warn('[Chronicle] capture embedding failed:', embErr.message || embErr);
+      }
+      await pool.query('UPDATE chats SET title = $1, summary = $2, tags = $3, embedding = COALESCE($4, embedding) WHERE id = $5', [
         meta.suggestedTitle,
         meta.summary || '',
         JSON.stringify(meta.tags || []),
+        embedding,
         chatId,
       ]);
       notifyRenderer(getMainWindow, { id: chatId, action: 'enriched', title: meta.suggestedTitle });
