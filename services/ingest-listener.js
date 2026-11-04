@@ -32,6 +32,7 @@
  */
 const http = require('http');
 const crypto = require('crypto');
+const { createEnrichmentQueue } = require('./enrichment-queue');
 
 const {
   validateIngestChatInput,
@@ -468,24 +469,44 @@ async function handleIngestChat(pool, getMainWindow, resolveFoundationConfig, ra
 }
 
 /**
- * Verrijkt een net geïngest gesprek achteraf met een AI-titel (plus summary
- * en tags): dezelfde Gemini-flow als de handmatige import (analyze-content),
- * maar dan pas ~60s na de levering — het gesprek groeit vaak nog, en de
- * auto-capture levert daarna nieuwe versies; de titel wordt dan één keer
- * gezet (en bij latere updates alleen als er nog geen AI-titel stond).
+ * Verrijkt een net geïngest gesprek achteraf met een AI-titel (plus summary,
+ * tags en embedding): dezelfde Gemini-flow als de handmatige import
+ * (analyze-content), maar dan pas ~60s na de levering — het gesprek groeit
+ * vaak nog, en de auto-capture levert daarna nieuwe versies; de titel wordt
+ * dan één keer gezet.
+ *
+ * Het werk zelf loopt via een gedeelde wachtrij (services/enrichment-queue.js):
+ * gethrottled, met retry bij 429/5xx en met één batch-request voor de
+ * embeddings van meerdere gesprekken. Zo blijft een grote import binnen de
+ * rate limits van de Gemini-key.
  */
-function scheduleTitleEnrichment(pool, chatId, getMainWindow) {
-  setTimeout(async () => {
-    try {
-      const res = await pool.query('SELECT title, content FROM chats WHERE id = $1', [chatId]);
-      if (!res.rows.length) return; // verwijderd in de tussentijd
-      const row = res.rows[0];
-      const apiKey = resolveGeminiKeyForIngest();
-      if (!apiKey) return; // geen key: de eerste-zin-titel blijft gewoon staan
-      const { GoogleGenAI, Type } = require('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
+const ENRICH_DELAY_MS = 60 * 1000;
+let enrichmentQueue = null;
+
+function getEnrichmentQueue(pool, getMainWindow) {
+  if (enrichmentQueue) return enrichmentQueue;
+  const intervalMs = Number(process.env.CHRONICLE_ENRICH_INTERVAL_MS) || 1500;
+  let ai = null;
+  const getAi = () => {
+    if (ai) return ai;
+    const apiKey = resolveGeminiKeyForIngest();
+    if (!apiKey) return null; // geen key: de eerste-zin-titel blijft gewoon staan
+    const { GoogleGenAI } = require('@google/genai');
+    ai = new GoogleGenAI({ apiKey });
+    return ai;
+  };
+  enrichmentQueue = createEnrichmentQueue({
+    intervalMs,
+    loadRow: async (id) => {
+      const res = await pool.query('SELECT title, content FROM chats WHERE id = $1', [id]);
+      return res.rows[0] || null;
+    },
+    generateMeta: async (row) => {
+      const client = getAi();
+      if (!client) return null;
+      const { Type } = require('@google/genai');
       const prompt = 'Summarize this AI conversation. Suggest a title of 3 to 10 words and relevant tags.';
-      const response = await ai.models.generateContent({
+      const response = await client.models.generateContent({
         model: 'gemini-flash-latest',
         contents: { parts: [{ text: String(row.content || '').substring(0, 10000) }, { text: prompt }] },
         config: {
@@ -506,33 +527,34 @@ Return a JSON object with:
           },
         },
       });
-      const meta = JSON.parse(response.text || '{}');
-      if (!meta.suggestedTitle) return;
-      // Embedding zoals bij de handmatige import (content + summary), zodat
-      // gecapturede gesprekken ook in semantisch zoeken en ChroniclePulse
-      // meedoen. Een mislukte embedding mag de titel niet blokkeren.
-      let embedding = null;
-      try {
-        const emb = await ai.models.embedContent({
-          model: 'gemini-embedding-001',
-          contents: [{ parts: [{ text: `${row.content || ''}\n${meta.summary || ''}`.substring(0, 9000) }] }],
-        });
-        embedding = emb.embeddings?.[0]?.values || null;
-      } catch (embErr) {
-        console.warn('[Chronicle] capture embedding failed:', embErr.message || embErr);
-      }
+      return JSON.parse(response.text || '{}');
+    },
+    // Meerdere teksten in één request; de volgorde van de resultaten volgt de invoer.
+    embedBatch: async (texts) => {
+      const client = getAi();
+      if (!client) return texts.map(() => null);
+      const response = await client.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: texts.map((text) => ({ parts: [{ text }] })),
+      });
+      return (response.embeddings || []).map((e) => e.values || null);
+    },
+    saveRow: async (id, meta, embedding) => {
       await pool.query('UPDATE chats SET title = $1, summary = $2, tags = $3, embedding = COALESCE($4, embedding) WHERE id = $5', [
         meta.suggestedTitle,
         meta.summary || '',
         JSON.stringify(meta.tags || []),
         embedding,
-        chatId,
+        id,
       ]);
-      notifyRenderer(getMainWindow, { id: chatId, action: 'enriched', title: meta.suggestedTitle });
-    } catch (err) {
-      console.error('[Chronicle] title enrichment failed:', err.message || err);
-    }
-  }, 60 * 1000);
+    },
+    notify: (id, meta) => notifyRenderer(getMainWindow, { id, action: 'enriched', title: meta.suggestedTitle }),
+  });
+  return enrichmentQueue;
+}
+
+function scheduleTitleEnrichment(pool, chatId, getMainWindow) {
+  setTimeout(() => getEnrichmentQueue(pool, getMainWindow).enqueue(chatId), ENRICH_DELAY_MS);
 }
 
 /** De Gemini-key staat in .env.local — dezelfde resolutie als analyze-content. */
