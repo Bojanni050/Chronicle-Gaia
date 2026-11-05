@@ -14,7 +14,7 @@
  */
 (() => {
 
-  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences } = window.__chronicleUI;
+  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, applyBulkFilter } = window.__chronicleUI;
 
   // Selectors in volgorde van voorkeur; de eerste die tekst oplevert wint.
   const SELECTORS = {
@@ -637,10 +637,14 @@
   // laten hangen. Handmatig exporteren heeft geen budget — daar wacht je zelf.
   const BULK_MAX_MS = 30000;
 
-  async function collectBulkConversations(onProgress, onCollected) {
-    const list = await harvestConversations();
-    if (!list.length) {
+  async function collectBulkConversations(filter, onProgress, onCollected) {
+    const all = await harvestConversations();
+    if (!all.length) {
       throw new Error('geen gesprekken in de zijbalk — open de linkerzijbalk');
+    }
+    const list = applyBulkFilter(all, filter, { hasDates: false, hasArchive: false });
+    if (list.length !== all.length) {
+      console.info('[Chronicle] gemini bulk: filter', all.length, '→', list.length, 'gesprekken');
     }
     const out = [];
     const skipped = [];
@@ -733,7 +737,7 @@
   // stil, terwijl de teller al doorliep en er niets in Chronicle verscheen.
   const BULK_BATCH = 5;
 
-  const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
+  async function runBulk(filter) {
     const ui = window.__chronicleUI;
     const batch = [];
     let totals = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
@@ -761,6 +765,7 @@
       bulkActive = true;
       armed = false;
       const { conversations, skipped } = await collectBulkConversations(
+        filter,
         (i, total, name, phase) => {
           bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 24) : ''}${phase ? ' • ' + phase : ''}`;
         },
@@ -795,7 +800,17 @@
       // Pas hier weer wapenen: nu is de DOM van het laatste gesprek stil.
       armAfterSettle();
     }
+  }
+
+  // Filterformulier (gedeeld met Claude/ChatGPT, staat in normalize.js). De
+  // zijbalk geeft geen datums of archiefmarkering mee, dus die twee velden
+  // doen hier niets; "laatste N" werkt wel (zijbalk = nieuwste eerst).
+  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({
+    supportsDate: false,
+    supportsArchive: false,
+    onStart: runBulk,
   });
+  const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 
   const floatingButton = makeButton(() => {
     window.__chronicleUI.setButtonState(floatingButton, 'busy');

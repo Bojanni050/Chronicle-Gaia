@@ -10,7 +10,7 @@
  */
 (() => {
 
-  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs } = window.__chronicleUI;
+  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs, applyBulkFilter } = window.__chronicleUI;
 
   function conversationIdFromUrl() {
     const match = location.pathname.match(/\/c\/([0-9a-f-]{16,})/i);
@@ -571,8 +571,14 @@
     return conversations;
   }
 
-  async function collectBulkConversations(onProgress) {
-    const list = await collectAllConversations();
+  async function collectBulkConversations(filter, onProgress) {
+    const all = await collectAllConversations();
+    // Filteren vóór de detailverzoeken: honderden gesprekken ophalen om er
+    // twintig te bewaren is minuten werk voor niets.
+    const list = applyBulkFilter(all, filter);
+    if (list.length !== all.length) {
+      console.info('[Chronicle] chatgpt bulk: filter', all.length, '→', list.length, 'gesprekken');
+    }
     const out = [];
     let i = 0;
     // In batches van 3 met 200ms pauze — zelfde beschermingspatroon als de
@@ -611,11 +617,11 @@
     return out;
   }
 
-  const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
+  async function runBulk(filter) {
     const ui = window.__chronicleUI;
     try {
       bulkButton.textContent = '⇊ lijst ophalen…';
-      const conversations = await collectBulkConversations((i, total, name) => {
+      const conversations = await collectBulkConversations(filter, (i, total, name) => {
         bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}`;
       });
       if (!conversations.length) {
@@ -628,7 +634,11 @@
       bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
     }
-  });
+  }
+
+  // Filterformulier (gedeeld met Claude/Gemini, staat in normalize.js).
+  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({ onStart: runBulk });
+  const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 
   const floatingButton = makeButton(() => {
     // Directe feedback, vóór async werk: als de klik iets doet, zie je het meteen.

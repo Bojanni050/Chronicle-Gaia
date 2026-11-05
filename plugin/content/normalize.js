@@ -461,6 +461,244 @@
     layoutPanel();
   }
 
+  // ── Bulkfilter ───────────────────────────────────────────────────────────
+  // Filteren vóór er één detailverzoek de deur uit gaat: honderden gesprekken
+  // ophalen om er twintig te bewaren is minuten werk voor niets.
+  const BULK_FILTER_KEY = 'bulkFilter';
+  const EMPTY_BULK_FILTER = { since: '', archive: 'skip', lastN: 0 };
+  let bulkFilter = Object.assign({}, EMPTY_BULK_FILTER);
+
+  function loadBulkFilter(cb) {
+    try {
+      chrome.storage.local.get([BULK_FILTER_KEY], (data) => {
+        bulkFilter = Object.assign({}, EMPTY_BULK_FILTER, (data && data[BULK_FILTER_KEY]) || {});
+        if (cb) cb(bulkFilter);
+      });
+    } catch (err) {
+      if (cb) cb(bulkFilter);
+    }
+  }
+
+  function saveBulkFilter(filter) {
+    bulkFilter = Object.assign({}, EMPTY_BULK_FILTER, filter || {});
+    try {
+      chrome.storage.local.set({ [BULK_FILTER_KEY]: bulkFilter });
+    } catch (err) {
+      // Zonder storage geldt de keuze alleen voor deze pagina.
+    }
+  }
+
+  /** Tijdstempel van een lijstregel; 0 als de provider niets bruikbaars gaf. */
+  function bulkTimestamp(conv) {
+    const ms = toEpochMs(conv.updated_at || conv.update_time || conv.created_at || conv.create_time);
+    return typeof ms === 'number' && Number.isFinite(ms) ? ms : 0;
+  }
+
+  function bulkIsArchived(conv) {
+    return conv.is_archived === true || conv.archived === true || Boolean(conv.archived_at);
+  }
+
+  /**
+   * Filtert de gesprekkenlijst. `hasDates`/`hasArchive` komen van de provider:
+   * de Gemini-zijbalk heeft geen van beide, en dan zou filteren alles
+   * weggooien. `lastN` werkt overal — elke lijst komt in actualiteitsvolgorde
+   * (ChatGPT `order=updated`, Claude gesorteerd op updated_at, Gemini
+   * zijbalk nieuwste eerst).
+   */
+  function applyBulkFilter(list, filter, capabilities = {}) {
+    if (!filter || !Array.isArray(list)) return list;
+    const hasDates = capabilities.hasDates !== false;
+    const hasArchive = capabilities.hasArchive !== false;
+    let out = list;
+
+    if (filter.since) {
+      if (!hasDates) {
+        console.info('[Chronicle] bulkfilter: datumfilter overgeslagen — deze lijst heeft geen datums');
+      } else {
+        // Een datumveld levert YYYY-MM-DD; Date.parse maakt daar UTC-middernacht
+        // van, wat in CET een gesprek van 00:30 zou wegfilteren. Lokaal parse.
+        const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(filter.since);
+        const sinceMs = parts
+          ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])).getTime()
+          : Date.parse(filter.since);
+        if (Number.isFinite(sinceMs)) out = out.filter((conv) => bulkTimestamp(conv) >= sinceMs);
+      }
+    }
+
+    if (filter.archive === 'skip' || filter.archive === 'only') {
+      if (!hasArchive) {
+        console.info('[Chronicle] bulkfilter: archieffilter overgeslagen — deze lijst markeert geen archief');
+      } else {
+        if (!list.some(bulkIsArchived)) {
+          // De lijst-API markeert archief niet (altijd); dan is dit filter een
+          // stille no-op en dat mag je weten vóór je denkt dat het werkte.
+          console.info('[Chronicle] bulkfilter: geen archiefmarkering in de lijst — archieffilter doet niets');
+        }
+        out =
+          filter.archive === 'only'
+            ? out.filter(bulkIsArchived)
+            : out.filter((conv) => !bulkIsArchived(conv));
+      }
+    }
+
+    if (hasDates) {
+      // Nieuwste eerst: "laatste N" moet ook echt de laatste N zijn.
+      out = out.slice().sort((a, b) => bulkTimestamp(b) - bulkTimestamp(a));
+    }
+    if (filter.lastN > 0) out = out.slice(0, filter.lastN);
+    return out;
+  }
+
+  const FILTER_LABEL_STYLE = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    fontSize: '11px',
+    color: '#57534e',
+  };
+  const FILTER_INPUT_STYLE = {
+    font: '12px system-ui, sans-serif',
+    padding: '4px 6px',
+    border: '1px solid rgba(0,0,0,0.2)',
+    borderRadius: '6px',
+    background: '#fff',
+    color: '#1c1917',
+    width: '100%',
+    boxSizing: 'border-box',
+  };
+
+  function filterField(text, control) {
+    const label = document.createElement('label');
+    Object.assign(label.style, FILTER_LABEL_STYLE);
+    const caption = document.createElement('span');
+    caption.textContent = text;
+    label.append(caption, control);
+    return label;
+  }
+
+  /**
+   * Het filterformulier voor de bulk-knop. `onStart(filter)` start de run;
+   * welke velden zin hebben bepaalt de provider via `supportsDate` en
+   * `supportsArchive`. De keuze blijft bewaard in chrome.storage.local.
+   */
+  function makeBulkFilterPanel(options = {}) {
+    const supportsDate = options.supportsDate !== false;
+    const supportsArchive = options.supportsArchive !== false;
+
+    const panel = document.createElement('div');
+    panel.id = 'chronicle-bulk-filter';
+    Object.assign(panel.style, {
+      flexDirection: 'column',
+      gap: '8px',
+      padding: '10px',
+      borderRadius: '10px',
+      border: '1px solid rgba(0,0,0,0.15)',
+      background: '#fefef9',
+      color: '#1c1917',
+      font: '12px system-ui, sans-serif',
+      boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
+      width: '210px',
+    });
+
+    const since = document.createElement('input');
+    since.type = 'date';
+    Object.assign(since.style, FILTER_INPUT_STYLE);
+
+    const archive = document.createElement('select');
+    Object.assign(archive.style, FILTER_INPUT_STYLE);
+    for (const [value, text] of [
+      ['skip', 'Archief overslaan'],
+      ['only', 'Alleen archief'],
+      ['all', 'Alles meenemen'],
+    ]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      archive.appendChild(option);
+    }
+
+    const lastN = document.createElement('input');
+    lastN.type = 'number';
+    lastN.min = '0';
+    lastN.step = '1';
+    lastN.placeholder = 'alles';
+    Object.assign(lastN.style, FILTER_INPUT_STYLE);
+
+    const row = document.createElement('div');
+    Object.assign(row.style, { display: 'flex', gap: '6px' });
+
+    const start = document.createElement('button');
+    start.textContent = '⇊ Start';
+    Object.assign(start.style, {
+      flex: '1',
+      padding: '6px 10px',
+      borderRadius: '8px',
+      border: '1px solid rgba(0,0,0,0.15)',
+      background: '#1c1917',
+      color: '#fefef9',
+      font: '12px system-ui, sans-serif',
+      cursor: 'pointer',
+    });
+
+    const everything = document.createElement('button');
+    everything.textContent = 'Alles';
+    everything.title = 'Geen filters: elk gesprek, archief inbegrepen';
+    Object.assign(everything.style, {
+      padding: '6px 10px',
+      borderRadius: '8px',
+      border: '1px solid rgba(0,0,0,0.15)',
+      background: '#fff',
+      color: '#1c1917',
+      font: '12px system-ui, sans-serif',
+      cursor: 'pointer',
+    });
+
+    const populate = () => {
+      since.value = bulkFilter.since || '';
+      archive.value = bulkFilter.archive || 'skip';
+      lastN.value = bulkFilter.lastN ? String(bulkFilter.lastN) : '';
+    };
+
+    const launch = (filter) => {
+      saveBulkFilter(filter);
+      setBulkOptionsOpen(false);
+      options.onStart(filter);
+    };
+
+    start.addEventListener('click', () => {
+      launch({
+        since: supportsDate ? since.value || '' : '',
+        archive: supportsArchive ? archive.value : 'all',
+        lastN: Number(lastN.value) || 0,
+      });
+    });
+
+    everything.addEventListener('click', () => {
+      launch({ since: '', archive: 'all', lastN: 0 });
+    });
+
+    if (supportsDate) panel.appendChild(filterField('Vanaf datum', since));
+    if (supportsArchive) panel.appendChild(filterField('Archief', archive));
+    panel.appendChild(filterField('Laatste N gesprekken', lastN));
+    panel.appendChild(row);
+    row.append(start, everything);
+
+    mountBulkOptions(panel);
+    loadBulkFilter(populate);
+
+    panel.populate = populate;
+    panel.show = () => {
+      loadBulkFilter(populate);
+      setBulkOptionsOpen(true);
+    };
+    panel.hide = () => setBulkOptionsOpen(false);
+    panel.toggle = () => {
+      if (panel.dataset.open === 'true') panel.hide();
+      else panel.show();
+    };
+    return panel;
+  }
+
   function setBulkProgress(button, report) {
     const done = report.created + report.updated + report.duplicates + report.failed + report.queued;
     button.textContent = `⇊ ${done}/${report.total} • nieuw ${report.created} • bijgewerkt ${report.updated} • bekend ${report.duplicates}${report.failed ? ' • mislukt ' + report.failed : ''}${report.queued ? ' • wachtrij ' + report.queued : ''}`;
@@ -565,6 +803,9 @@
     makeBulkButton,
     mountBulkOptions,
     setBulkOptionsOpen,
+    makeBulkFilterPanel,
+    applyBulkFilter,
+    loadBulkFilter,
     toEpochMs,
     transcriptFromTurns,
     innerTextWithCodeFences,

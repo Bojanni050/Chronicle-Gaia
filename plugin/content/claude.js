@@ -10,7 +10,7 @@
  */
 (() => {
 
-  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs } = window.__chronicleUI;
+  const { makeButton, exportToChronicle, buildConversation, transcriptFromTurns, innerTextWithCodeFences, toEpochMs, applyBulkFilter } = window.__chronicleUI;
 
   function conversationUuidFromUrl() {
     const match = location.pathname.match(/\/chat\/([0-9a-f-]{36})/i);
@@ -426,59 +426,14 @@
     return { list: fromDom, source: fromDom.length ? 'sidebar' : null, reason: fromDom.length ? null : 'lijst-API faalde en de zijbalk gaf geen links' };
   }
 
-  /** Tijdstempel van een lijstregel, in ms; 0 als de API niets bruikbaars gaf. */
-  function conversationTimestamp(conv) {
-    const ms = toEpochMs(conv.updated_at || conv.created_at);
-    return typeof ms === 'number' && Number.isFinite(ms) ? ms : 0;
-  }
-
-  function isArchivedConversation(conv) {
-    return conv.is_archived === true || conv.archived === true || Boolean(conv.archived_at);
-  }
-
-  /**
-   * Filtert de gesprekkenlijst vóór er ook maar één detailverzoek de deur uit
-   * gaat: 590 gesprekken ophalen om er 20 te bewaren is zonde van de API.
-   * `since` is een datumveld-waarde (YYYY-MM-DD, lokale middernacht),
-   * `archive` is 'skip' | 'only' | 'all', `lastN` 0 betekent alles.
-   */
-  function applyBulkFilter(list, filter) {
-    if (!filter) return list;
-    let out = list;
-    if (filter.since) {
-      // Datumveld levert YYYY-MM-DD; Date.parse maakt daar UTC-middernacht
-      // van, wat in CET een gesprek van 00:30 zou wegfilteren. Lokaal parse.
-      const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(filter.since);
-      const sinceMs = parts
-        ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])).getTime()
-        : Date.parse(filter.since);
-      if (Number.isFinite(sinceMs)) out = out.filter((conv) => conversationTimestamp(conv) >= sinceMs);
-    }
-    if (filter.archive === 'skip' || filter.archive === 'only') {
-      const archived = list.filter(isArchivedConversation).length;
-      if (!archived) {
-        // De lijst-API markeert archief niet altijd; dan is dit filter een
-        // stille no-op en dat mag je weten vóór je denkt dat het werkte.
-        console.info('[Chronicle] claude bulk: geen archiefmarkering in de lijst — archieffilter doet niets');
-      }
-      out = filter.archive === 'only' ? out.filter(isArchivedConversation) : out.filter((c) => !isArchivedConversation(c));
-    }
-    // Nieuwste eerst: "laatste N" moet ook echt de laatste N zijn.
-    out = out.slice().sort((a, b) => conversationTimestamp(b) - conversationTimestamp(a));
-    if (filter.lastN > 0) out = out.slice(0, filter.lastN);
-    return out;
-  }
-
   async function collectBulkConversations(filter, onProgress, onCollected) {
     const { list: all, source, reason } = await collectAllConversations();
-    // De zijbalklijst heeft geen datums of archiefmarkering; filteren zou daar
-    // alles weggooien. Liever eerlijk de filter overslaan dan nul gesprekken.
-    let list = all;
-    if (source === 'api') {
-      list = applyBulkFilter(all, filter);
-    } else if (filter && (filter.since || filter.lastN || filter.archive !== 'all')) {
-      console.info('[Chronicle] claude bulk: filters overgeslagen — de zijbalklijst heeft geen datums/archiefvlag');
-    }
+    // Welke filters zin hebben hangt van de bron af: de DOM-zijbalk heeft geen
+    // datums of archiefvlag, de API hopelijk wel.
+    const list = applyBulkFilter(all, filter, {
+      hasDates: source === 'api',
+      hasArchive: source === 'api',
+    });
     if (list.length !== all.length) {
       console.info('[Chronicle] claude bulk: filter', all.length, '→', list.length, 'gesprekken');
     }
@@ -550,54 +505,7 @@
   // liep wel door, Chronicle bleef leeg.
   const BULK_BATCH = 5;
 
-  // Filterkeuze hoort vóór de run: 590 gesprekken door de API jagen terwijl je
-  // er 20 wilt, is Minuten werk voor niets. De keuze blijft bewaard.
-  const BULK_FILTER_KEY = 'claudeBulkFilter';
-  const EMPTY_FILTER = { since: '', archive: 'skip', lastN: 0 };
-  let bulkFilter = Object.assign({}, EMPTY_FILTER);
   let bulkBusy = false;
-
-  function loadBulkFilter(cb) {
-    try {
-      chrome.storage.local.get([BULK_FILTER_KEY], (data) => {
-        const stored = data && data[BULK_FILTER_KEY];
-        bulkFilter = Object.assign({}, EMPTY_FILTER, stored || {});
-        cb && cb(bulkFilter);
-      });
-    } catch (err) {
-      cb && cb(bulkFilter);
-    }
-  }
-
-  function saveBulkFilter(filter) {
-    bulkFilter = Object.assign({}, EMPTY_FILTER, filter || {});
-    try {
-      chrome.storage.local.set({ [BULK_FILTER_KEY]: bulkFilter });
-    } catch (err) {
-      // Zonder storage geldt de keuze alleen voor deze pagina.
-    }
-  }
-
-  const PANEL_LABEL = { display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#57534e' };
-  const PANEL_INPUT = {
-    font: '12px system-ui, sans-serif',
-    padding: '4px 6px',
-    border: '1px solid rgba(0,0,0,0.2)',
-    borderRadius: '6px',
-    background: '#fff',
-    color: '#1c1917',
-    width: '100%',
-    boxSizing: 'border-box',
-  };
-
-  function filterField(text, control) {
-    const label = document.createElement('label');
-    Object.assign(label.style, PANEL_LABEL);
-    const caption = document.createElement('span');
-    caption.textContent = text;
-    label.append(caption, control);
-    return label;
-  }
 
   async function runBulk(filter) {
     if (bulkBusy) return;
@@ -674,103 +582,11 @@
     }
   }
 
-  let filterPanel = null;
 
-  /** Het filterformulier: vanaf-datum, archief, laatste N. */
-  function makeFilterPanel() {
-    const panel = document.createElement('div');
-    panel.id = 'chronicle-bulk-filter';
-    Object.assign(panel.style, {
-      display: 'none',
-      flexDirection: 'column',
-      gap: '8px',
-      padding: '10px',
-      borderRadius: '10px',
-      border: '1px solid rgba(0,0,0,0.15)',
-      background: '#fefef9',
-      color: '#1c1917',
-      font: '12px system-ui, sans-serif',
-      boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
-      width: '210px',
-    });
+  // Filterformulier (gedeeld met ChatGPT/Gemini, staat in normalize.js).
+  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({ onStart: runBulk });
 
-    const since = document.createElement('input');
-    since.type = 'date';
-    Object.assign(since.style, PANEL_INPUT);
-
-    const archive = document.createElement('select');
-    Object.assign(archive.style, PANEL_INPUT);
-    for (const [value, text] of [
-      ['skip', 'Archief overslaan'],
-      ['only', 'Alleen archief'],
-      ['all', 'Alles meenemen'],
-    ]) {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = text;
-      archive.appendChild(option);
-    }
-
-    const lastN = document.createElement('input');
-    lastN.type = 'number';
-    lastN.min = '0';
-    lastN.step = '1';
-    lastN.placeholder = 'alles';
-    Object.assign(lastN.style, PANEL_INPUT);
-
-    const row = document.createElement('div');
-    Object.assign(row.style, { display: 'flex', gap: '6px' });
-
-    const start = document.createElement('button');
-    start.textContent = '⇊ Start';
-    Object.assign(start.style, { flex: '1', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.15)', background: '#1c1917', color: '#fefef9', font: '12px system-ui, sans-serif', cursor: 'pointer' });
-
-    const everything = document.createElement('button');
-    everything.textContent = 'Alles';
-    everything.title = 'Geen filters: elk gesprek, archief inbegrepen';
-    Object.assign(everything.style, { padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.15)', background: '#fff', color: '#1c1917', font: '12px system-ui, sans-serif', cursor: 'pointer' });
-
-    const close = () => {
-      window.__chronicleUI.setBulkOptionsOpen(false);
-    };
-
-    const populate = () => {
-      since.value = bulkFilter.since || '';
-      archive.value = bulkFilter.archive || 'skip';
-      lastN.value = bulkFilter.lastN ? String(bulkFilter.lastN) : '';
-    };
-
-    start.addEventListener('click', () => {
-      const filter = { since: since.value || '', archive: archive.value, lastN: Number(lastN.value) || 0 };
-      saveBulkFilter(filter);
-      close();
-      runBulk(filter);
-    });
-
-    everything.addEventListener('click', () => {
-      const filter = { since: '', archive: 'all', lastN: 0 };
-      saveBulkFilter(filter);
-      close();
-      runBulk(filter);
-    });
-
-    row.append(start, everything);
-    panel.append(filterField('Vanaf datum', since), filterField('Archief', archive), filterField('Laatste N gesprekken', lastN), row);
-
-    const mount = window.__chronicleUI.mountBulkOptions || ((node) => document.body.appendChild(node));
-    mount(panel);
-    panel.populate = populate;
-    return panel;
-  }
-
-  const bulkButton = window.__chronicleUI.makeBulkButton(() => {
-    if (!filterPanel) filterPanel = makeFilterPanel();
-    const open = filterPanel.dataset.open !== 'true';
-    window.__chronicleUI.setBulkOptionsOpen(open);
-    if (open) {
-      loadBulkFilter(() => filterPanel.populate());
-    }
-  });
+  const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 
   const floatingButton = makeButton(() => {
     // Directe feedback, vóór async werk: als de klik iets doet, zie je het meteen.
