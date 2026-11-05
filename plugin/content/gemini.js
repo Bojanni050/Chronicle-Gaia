@@ -25,6 +25,16 @@
     sidebarScroller: 'infinite-scroller',
     chatsSection: '[data-test-id="chats-expandable-section"]',
     sectionToggle: '[data-test-id="expandable-section-toggle"]',
+    // Gemini's zijbalk klapt dicht (of wordt op smalle vensters verborgen).
+    // Zonder open zijbalk is er geen enkele anchor om op te klikken, dus
+    // proberen we hem eerst open te krijgen.
+    sidebarToggle: [
+      'button[data-test-id="side-nav-menu-button"]',
+      'button[aria-label="Main menu"]',
+      'button[aria-label="Hoofdmenu"]',
+      'button[aria-label*="main menu" i]',
+      'button[aria-label*="hoofdmenu" i]',
+    ],
   };
 
   // Gemini emit no-break spaces (U+00A0, U+202F); normaliseer naar gewone
@@ -482,7 +492,28 @@
   // door op een anchor te klikken — niet via directe navigatie. Vandaar het
   // klikken + stabiliteitswacht uit gemini-chat-exporter.
 
+  /**
+   * Zorgt dat de gesprekkenlijst in de zijbalk er is. Gemini klapt die dicht
+   * (of verbergt hem op smalle vensters); dan vindt harvestConversations nul
+   * anchors en zou de bulk meteen afbreken.
+   */
+  async function ensureSidebarOpen() {
+    if (document.querySelector(SELECTORS.sidebarLink)) return true;
+    for (const sel of SELECTORS.sidebarToggle) {
+      const button = document.querySelector(sel);
+      if (!button) continue;
+      console.info('[Chronicle] gemini: zijbalk dicht — openen via', sel);
+      button.click();
+      for (let i = 0; i < 6; i++) {
+        await sleep(500);
+        if (document.querySelector(SELECTORS.sidebarLink)) return true;
+      }
+    }
+    return Boolean(document.querySelector(SELECTORS.sidebarLink));
+  }
+
   async function harvestConversations() {
+    await ensureSidebarOpen();
     const merged = new Map();
     const absorb = () => {
       for (const anchor of document.querySelectorAll(SELECTORS.sidebarLink)) {
@@ -527,24 +558,37 @@
     }
     return Array.from(merged.values());
   }
-  async function scrollToFindAnchor(id) {
-    const sel = `a[href="/app/${id}"]`;
-    let anchor = document.querySelector(sel);
-    if (anchor) return anchor;
+  /** Scrollt de zijbalk stapsgewijs langs en geeft de anchor terug (of null). */
+  async function scrollSidebarTo(sel) {
+    const found = document.querySelector(sel);
+    if (found) return found;
     const scroller = document.querySelector(SELECTORS.sidebarScroller);
     if (!scroller) return null;
     scroller.scrollTop = 0;
     await sleep(200);
     for (let i = 0; i < 100; i++) {
-      anchor = document.querySelector(sel);
+      const anchor = document.querySelector(sel);
       if (anchor) return anchor;
       const prev = scroller.scrollTop;
       scroller.scrollTop = Math.min(scroller.scrollTop + scroller.clientHeight * 0.8, scroller.scrollHeight);
       await sleep(200);
       if (scroller.scrollTop === prev) break;
     }
-    if (!anchor) console.info('[Chronicle] gemini bulk: anchor niet gevonden in de zijbalk:', id);
     return document.querySelector(sel);
+  }
+
+  async function scrollToFindAnchor(id) {
+    const sel = `a[href="/app/${id}"]`;
+    const anchor = await scrollSidebarTo(sel);
+    if (anchor) return anchor;
+    // Klapte de zijbalk tijdens de rit dicht, dan is niet alleen dit gesprek
+    // onvindbaar maar elk volgend gesprek ook. Eén keer opnieuw openen.
+    if (await ensureSidebarOpen()) {
+      const retry = await scrollSidebarTo(sel);
+      if (retry) return retry;
+    }
+    console.info('[Chronicle] gemini bulk: anchor niet gevonden in de zijbalk:', id);
+    return null;
   }
 
   async function navigateTo(conv) {
@@ -590,7 +634,7 @@
   // laten hangen. Handmatig exporteren heeft geen budget — daar wacht je zelf.
   const BULK_MAX_MS = 30000;
 
-  async function collectBulkConversations(onProgress) {
+  async function collectBulkConversations(onProgress, onCollected) {
     const list = await harvestConversations();
     if (!list.length) {
       throw new Error('geen gesprekken in de zijbalk — open de linkerzijbalk');
@@ -607,8 +651,16 @@
       const label = (conv.title || '(zonder titel)').slice(0, 40);
       const t0 = Date.now();
       onProgress && onProgress(i + 1, list.length, conv.title, 'laden');
-      const navigated = await navigateTo(conv);
-      if (!navigated || !(await waitForConversation(conv.id))) {
+      let navigated = await navigateTo(conv);
+      let loaded = navigated && (await waitForConversation(conv.id));
+      if (!loaded) {
+        // Eén herkansing: een klik die net na een re-render van de zijbalk
+        // kwam doet niets, en dan zou een gezond gesprek onterecht sneuvelen.
+        await sleep(600);
+        navigated = await navigateTo(conv);
+        loaded = navigated && (await waitForConversation(conv.id));
+      }
+      if (!loaded) {
         console.info('[Chronicle] gemini bulk: overgeslagen (niet geladen):', label);
         skipped.push({ title: conv.title, reason: 'niet geladen' });
         continue;
@@ -657,6 +709,7 @@
       delete result.elapsedMs;
       if (!result.title) result.title = conv.title;
       out.push(result);
+      if (onCollected) await onCollected(result);
       await sleep(200);
     }
     if (skipped.length) {
@@ -672,14 +725,48 @@
     return { conversations: out, skipped };
   }
 
+  // Lever meteen door tijdens het ophalen, in plaats van alles aan het eind in
+  // één keer: één zwaar gesprek (diep onderzoek) legde eerder de hele export
+  // stil, terwijl de teller al doorliep en er niets in Chronicle verscheen.
+  const BULK_BATCH = 5;
+
   const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
     const ui = window.__chronicleUI;
+    const batch = [];
+    let totals = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
+
+    const addTotals = (report) => {
+      for (const key of Object.keys(totals)) totals[key] += Number(report[key]) || 0;
+    };
+
+    const flush = async () => {
+      if (!batch.length) return;
+      const chunk = batch.splice(0, batch.length);
+      const report = await ui.deliverMany(chunk, (sum, _size, shipped) => {
+        bulkButton.textContent = `⇊ leveren ${shipped}/${chunk.length} • nieuw ${sum.created} • bijgewerkt ${sum.updated} • bekend ${sum.duplicates}`;
+      });
+      addTotals(report);
+      console.info('[Chronicle] gemini bulk: geleverd', chunk.length, 'gesprekken', totals);
+    };
+
     try {
       bulkButton.textContent = '⇊ lijst ophalen…';
       bulkButton.title = '';
-      const { conversations, skipped } = await collectBulkConversations((i, total, name, phase) => {
-        bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}${phase ? ' • ' + phase : ''}`;
-      });
+      // De bulk navigeert zelf van gesprek naar gesprek; elke navigatie zette
+      // auto-capture weer aan, die dan een tweede volledige reveal-pass deed en
+      // duplicaten leverde. Tijdens de bulk staat hij uit.
+      bulkActive = true;
+      armed = false;
+      const { conversations, skipped } = await collectBulkConversations(
+        (i, total, name, phase) => {
+          bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 24) : ''}${phase ? ' • ' + phase : ''}`;
+        },
+        async (conv) => {
+          batch.push(conv);
+          if (batch.length >= BULK_BATCH) await flush();
+        }
+      );
+      await flush();
       if (!conversations.length) {
         bulkButton.textContent = skipped.length
           ? `✗ niets opgehaald (${skipped.length} overgeslagen)`
@@ -688,14 +775,22 @@
         setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
         return;
       }
-      await ui.exportManyToChronicle(bulkButton, conversations);
+      bulkButton.textContent =
+        `⇊ klaar • nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates}` +
+        (totals.failed ? ` • ${totals.failed} mislukt` : '') +
+        (totals.gaps ? ` • ${totals.gaps} bestand(en) niet` : '');
       if (skipped.length) {
         bulkButton.textContent += ` • ${skipped.length} overgeslagen`;
         bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
       }
+      setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 10000);
     } catch (err) {
       bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
+    } finally {
+      bulkActive = false;
+      // Pas hier weer wapenen: nu is de DOM van het laatste gesprek stil.
+      armAfterSettle();
     }
   });
 
@@ -742,6 +837,9 @@
   let userScrollTimer = null;
   let pendingCapture = false;
   let scrollGuardUntil = 0;
+  // De bulk navigeert zelf door alle gesprekken. Auto-capture zou dan bij elke
+  // navigatie een extra reveal-pass starten en duplicaten leveren.
+  let bulkActive = false;
 
   function noteUserScroll() {
     if (revealing || Date.now() < scrollGuardUntil) return;
@@ -783,7 +881,7 @@
   }
 
   function scheduleCapture() {
-    if (!armed || revealing) return;
+    if (!armed || revealing || bulkActive) return;
     if (settleTimer) clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
       const sig = signature();
@@ -818,7 +916,7 @@
     pendingCapture = false;
     setTimeout(() => {
       baseline = signature();
-      armed = true;
+      armed = !bulkActive;
     }, 4000);
   }
 

@@ -441,6 +441,36 @@
     button.textContent = `⇊ ${done}/${report.total} • nieuw ${report.created} • bijgewerkt ${report.updated} • bekend ${report.duplicates}${report.failed ? ' • mislukt ' + report.failed : ''}${report.queued ? ' • wachtrij ' + report.queued : ''}`;
   }
 
+  const EMPTY_REPORT = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
+
+  /**
+   * Levert een reeks gesprekken in brokken van 15 (sendMessage heeft een
+   * berichtlimiet, en met thinking-blokken is één gesprek al flink groot) en
+   * telt de rapporten op. `onChunk(optelling, chunkSize, done)` vuurt na elke
+   * brok, zodat een aanroeper live kan bijwerken. Gooit bij een mislukte brok:
+   * de aanroeper beslist of de rest nog de moeite is.
+   */
+  async function deliverMany(conversations, onChunk) {
+    const CHUNK = 15;
+    const total = conversations.length;
+    const sum = Object.assign({}, EMPTY_REPORT);
+    for (let i = 0; i < total; i += CHUNK) {
+      const chunk = conversations.slice(i, i + CHUNK);
+      const response = await chrome.runtime.sendMessage({
+        type: 'chronicle-export-many',
+        conversations: chunk,
+      });
+      if (!response || !response.ok) {
+        throw new Error(response?.error || 'onbekende fout');
+      }
+      const report = response.report || {};
+      for (const key of Object.keys(sum)) sum[key] += Number(report[key]) || 0;
+      if (onChunk) onChunk(sum, chunk.length, i + chunk.length);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return sum;
+  }
+
   async function exportManyToChronicle(button, conversations) {
     button.disabled = true;
     button.textContent = `⇊ 0/${conversations.length}…`;
@@ -449,32 +479,15 @@
     };
     chrome.runtime.onMessage.addListener(progressListener);
     try {
-      // In chunks van 15: sendMessage heeft een berichtlimiet, en met
-      // thinking-blokken kan één groot gesprek al flink groot zijn.
-      const CHUNK = 15;
-      const total = conversations.length;
-      let lastReport = null;
-      for (let i = 0; i < total; i += CHUNK) {
-        const chunk = conversations.slice(i, i + CHUNK);
-        const response = await chrome.runtime.sendMessage({
-          type: 'chronicle-export-many',
-          conversations: chunk,
-        });
-        if (!response || !response.ok) {
-          button.textContent = '✗ bulkexport mislukt: ' + (response?.error || 'onbekende fout');
-          setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 6000);
-          return;
-        }
-        lastReport = response.report;
-        const done = Math.min(i + CHUNK, total);
-        button.textContent = `⇊ geleverd ${done}/${total} • nieuw ${response.report.created} • bijgewerkt ${response.report.updated} • bekend ${response.report.duplicates} ✓${response.report.gaps ? ` • ${response.report.gaps} bestand(en) niet` : ''}`;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      if (lastReport) {
-        setBulkProgress(button, lastReport);
-        button.textContent += ' ✓';
-        setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 8000);
-      }
+      const report = await deliverMany(conversations, (sum, _chunkSize, done) => {
+        button.textContent = `⇊ geleverd ${done}/${conversations.length} • nieuw ${sum.created} • bijgewerkt ${sum.updated} • bekend ${sum.duplicates}`;
+      });
+      button.textContent +=
+        ' ✓' + (report.gaps ? ` • ${report.gaps} bestand(en) niet` : '') + (report.failed ? ` • ${report.failed} mislukt` : '');
+      setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 8000);
+    } catch (err) {
+      button.textContent = '✗ bulkexport mislukt: ' + String(err && err.message ? err.message : err).slice(0, 60);
+      setTimeout(() => (button.textContent = '⇊ Alles naar Chronicle'), 6000);
     } finally {
       chrome.runtime.onMessage.removeListener(progressListener);
       button.disabled = false;
@@ -486,6 +499,7 @@
     makeButton,
     exportToChronicle,
     exportManyToChronicle,
+    deliverMany,
     buildConversation,
     bindToolbarClick,
     makeBulkButton,
