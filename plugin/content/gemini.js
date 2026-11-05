@@ -786,6 +786,21 @@
   // laten hangen. Handmatig exporteren heeft geen budget — daar wacht je zelf.
   const BULK_MAX_MS = 30000;
 
+  /**
+   * Gemini zet een diep-onderzoek-gesprek in een eigen paneel-element
+   * (`deep-research-immersive-panel`, hetzelfde anker dat export-tools
+   * gebruiken). Dat element bestaat niet in een gewoon gesprek en blijft ook
+   * staan wanneer je een afgerond onderzoek later heropent, dus het is een
+   * betrouwbaarder signaal dan de titel of een icoontje in de zijbalk.
+   *
+   * De check gebeurt ná `waitForConversation()`: dat wacht op twee gelijke
+   * beurten-signaturen, dus het paneel van het vórige gesprek is dan al uit de
+   * DOM. Vóór de reveal-pass, want juist die pass loopt op zo'n artifact vast.
+   */
+  function isDeepResearch() {
+    return Boolean(document.querySelector('deep-research-immersive-panel'));
+  }
+
   async function collectBulkConversations(filter, onProgress, onCollected) {
     const all = await harvestConversations();
     if (!all.length) {
@@ -847,6 +862,15 @@
         continue;
       }
       misses = 0;
+      // Diep onderzoek overslaan vóór de reveal-pass: dat artifact blijft
+      // lazy laden, dus de pass zou hier zijn hele budget (30 s) verbranden en
+      // het gesprek alsnog als "te zwaar/lang" afserveren. Overslaan is dan
+      // eerlijker én goedkoper. Handmatig exporteren blijft gewoon werken.
+      if (isDeepResearch()) {
+        console.info('[Chronicle] gemini bulk: overgeslagen (diep onderzoek):', label);
+        skipped.push({ title: conv.title, reason: 'diep onderzoek' });
+        continue;
+      }
       const diag = {};
       const result = await collectConversation({
         maxMs: BULK_MAX_MS,
