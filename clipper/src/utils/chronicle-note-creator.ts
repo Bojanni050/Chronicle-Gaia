@@ -27,6 +27,10 @@ export async function saveToChronicle(
 		content: fileContent,
 		title: noteName || url,
 		url,
+		// Chronicle's own object kind: a clip is a web object, not a chat.
+		// `source` is where it came from (the page), shown as the sitenaam.
+		object: 'web',
+		source: url || undefined,
 		sourceProvider: 'web',
 		occurredAt: new Date().toISOString(),
 	};

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { ChatEntry, SourceType } from '../types';
+import { ChatEntry, ItemType, SourceType } from '../types';
 import { XIcon, NetworkIcon, MessageIcon, ActivityIcon, ChartIcon, TagIcon, ChevronRightIcon, PlusIcon, DatabaseIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, TerminalIcon } from './Icons';
 import { MindMap } from './MindMap';
 import { ChatCard } from './ChatCard';
@@ -58,7 +58,12 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     });
     const avgMessages = totalChats > 0 ? Math.round(totalMessages / totalChats) : 0;
     const sourceCounts: Record<string, number> = {};
-    filteredChats.forEach(c => { sourceCounts[c.source] = (sourceCounts[c.source] || 0) + 1; });
+    // A web object's source is its page URL: counting per URL would fill the
+    // chart with one-off rows. They all belong to the one "Web" group.
+    filteredChats.forEach(c => {
+      const key = c.type === ItemType.WEB ? 'Web' : c.source;
+      sourceCounts[key] = (sourceCounts[key] || 0) + 1;
+    });
     const mostUsedAI = Object.entries(sourceCounts).sort((a, b) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'N/A';
     const activity: Record<string, { count: number; msgs: number }> = {};
     filteredChats.forEach(c => {

@@ -35,4 +35,8 @@ describe('displaySource', () => {
     expect(displaySource('ChatGPT', 'https://chatgpt.com/c/123')).toBe('ChatGPT');
     expect(displaySource('Manual', 'https://example.com')).toBe('Manual');
   });
+
+  it('reads the site from a web object whose source is the page url', () => {
+    expect(displaySource('https://www.theguardian.com/science/2024')).toBe('theguardian.com');
+  });
 });

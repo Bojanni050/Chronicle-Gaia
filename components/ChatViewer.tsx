@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef, Component } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatEntry, Settings, ItemType, Link } from '../types';
-import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, PencilIcon, SearchIcon, PlusIcon, BoltIcon, ArchiveIcon } from './Icons';
+import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, PencilIcon, SearchIcon, PlusIcon, BoltIcon, ArchiveIcon, LinkIcon } from './Icons';
 import { parseChatMessages, Message } from '../utils/chatUtils';
 import { displaySource } from '../utils/sourceLabel';
 import { ChatCard } from './ChatCard';
@@ -279,6 +279,10 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   const assetInputRef = useRef<HTMLInputElement>(null);
   
   const isNote = chat.type === ItemType.NOTE;
+  // Notes and web clips are documents, not conversations: their content is
+  // Markdown and must not be split into chat turns.
+  const isDocument = chat.type !== ItemType.CHAT;
+  const isWeb = chat.type === ItemType.WEB;
 
   useEffect(() => {
     setEditTitle(chat.title);
@@ -366,7 +370,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                 ) : (
                     <div className="flex items-center gap-4">
                          <div className={`p-3 rounded-2xl text-white ${isNote ? 'bg-amber-500 shadow-amber-500/20' : 'bg-sage-green shadow-sage-green/20'} shadow-xl`}>
-                             {isNote ? <PencilIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
+                             {isNote ? <PencilIcon className="w-6 h-6" /> : isWeb ? <LinkIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
                          </div>
                          <div>
                              <h1 className="text-4xl sm:text-5xl font-light text-earth-dark dark:text-white font-display tracking-[-0.04em] leading-tight">{chat.title}</h1>
@@ -478,7 +482,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                     <textarea className="w-full min-h-[400px] bg-transparent font-serif leading-relaxed text-lg outline-none" value={editContent} onChange={(e) => setEditContent(e.target.value)} />
                   ) : (
                     <>
-                      {isNote ? <MessageContent text={chat.content} /> : parsedMessages.map((msg, idx) => {
+                      {isDocument ? <MessageContent text={chat.content} /> : parsedMessages.map((msg, idx) => {
                         const keys = markerKeysIn(msg.text);
                         const here = keys.length
                           ? attachments.filter((att) => keys.includes(attachmentKey(att.filename)))

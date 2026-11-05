@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ChatEntry, ItemType, SourceType } from '../types';
-import { SearchIcon, XIcon, MessageIcon, ActivityIcon, PencilIcon, FilterIcon, CalendarIcon, TagIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, TerminalIcon } from './Icons';
+import { SearchIcon, XIcon, MessageIcon, ActivityIcon, PencilIcon, FilterIcon, CalendarIcon, TagIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, TerminalIcon, LinkIcon } from './Icons';
 import { ChatCard } from './ChatCard';
 
 interface SidebarProps {
@@ -115,9 +115,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (selectedType !== 'all') {
       filters.push({ 
         id: 'type', 
-        label: selectedType === 'chat' ? 'Chat Logs' : 'Synthesis Notes', 
+        label: selectedType === 'chat' ? 'Chat Logs' : selectedType === 'web' ? 'Web Clips' : 'Synthesis Notes', 
         type: 'type', 
-        icon: selectedType === 'chat' ? <MessageIcon className="w-2.5 h-2.5" /> : <PencilIcon className="w-2.5 h-2.5" /> 
+        icon: selectedType === 'chat' ? <MessageIcon className="w-2.5 h-2.5" /> : selectedType === 'web' ? <LinkIcon className="w-2.5 h-2.5" /> : <PencilIcon className="w-2.5 h-2.5" /> 
       });
     }
     if (selectedSource !== 'All') {

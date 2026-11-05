@@ -4,8 +4,9 @@ import Graph from 'graphology';
 import Sigma from 'sigma';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import FA2Layout from 'graphology-layout-forceatlas2/worker';
-import { ChatEntry, SourceType } from '../types';
+import { ChatEntry, ItemType, SourceType } from '../types';
 import { buildTagEdges } from '../utils/neuralGraph';
+import { displaySource } from '../utils/sourceLabel';
 import { ZoomInIcon, ZoomOutIcon, RefreshIcon, NetworkIcon, ArrowLeftIcon } from './Icons';
 
 interface MindMapProps {
@@ -22,8 +23,13 @@ const SOURCE_COLORS: Record<string, string> = {
   [SourceType.QWEN]: '#6366f1',   // indigo-500
   [SourceType.LOCAL]: '#a855f7', // purple-500
   [SourceType.OTHER]: '#a8a29e', // stone-400
+  [SourceType.WEB]: '#0ea5e9',   // sky-500
   'Default': '#78716c'
 };
+
+/** A web object's source is its URL; group it with the other clips. */
+const sourceKey = (chat: { type?: string; source: string }) =>
+  chat.type === ItemType.WEB ? SourceType.WEB : chat.source;
 
 const isDarkMode = () =>
   document.documentElement.classList.contains('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -85,7 +91,7 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
           x: Math.cos(angle) * radius,
           y: Math.sin(angle) * radius,
           size: 3 + Math.min(chat.tags.length, 5) * 0.7,
-          color: SOURCE_COLORS[chat.source] || SOURCE_COLORS['Default'],
+          color: SOURCE_COLORS[sourceKey(chat)] || SOURCE_COLORS['Default'],
           label: chat.title.length > 40 ? chat.title.slice(0, 39) + '…' : chat.title,
         });
       });
@@ -262,9 +268,9 @@ export const MindMap: React.FC<MindMapProps> = ({ chats, onClose, onSelectChat }
 
         {selectedChat && (
             <div className="absolute z-20 bottom-6 left-6 w-80 bg-white dark:bg-slate-900 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 animate-in fade-in zoom-in-95 duration-200">
-                <div className="h-1.5 w-full rounded-t-xl" style={{ backgroundColor: SOURCE_COLORS[selectedChat.source] || SOURCE_COLORS['Default'] }}></div>
+                <div className="h-1.5 w-full rounded-t-xl" style={{ backgroundColor: SOURCE_COLORS[sourceKey(selectedChat)] || SOURCE_COLORS['Default'] }}></div>
                 <div className="p-4">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 block font-sans">{selectedChat.source}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 block font-sans">{displaySource(selectedChat.source, selectedChat.capture?.url)}</span>
                     <h3 className="font-bold text-slate-900 dark:text-white mb-2 leading-tight font-sans">{selectedChat.title}</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-4">"{selectedChat.summary}"</p>
                     <div className="flex gap-2">

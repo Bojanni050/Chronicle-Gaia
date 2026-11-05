@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChatEntry, SourceType, AppState, Settings, Theme, AIProvider, ViewMode, ItemType, Link, CaptureData, FoundationCaptureState, SourceFileState } from './types';
 import { Sidebar } from './components/Sidebar';
-import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon, PencilIcon, MessageIcon } from './components/Icons';
+import { SearchIcon, PlusIcon, DatabaseIcon, SettingsIcon, XIcon, ChartIcon, NetworkIcon, ActivityIcon, BoltIcon, PencilIcon, MessageIcon, LinkIcon } from './components/Icons';
 import { UploadModal, SourceFileRef, AttachmentRef } from './components/UploadModal';
 import { ChatViewer } from './components/ChatViewer';
 import { SettingsModal } from './components/SettingsModal';
@@ -560,7 +560,7 @@ const App: React.FC = () => {
         const matchesSearch = searchStr === '' || chat.title.toLowerCase().includes(searchStr) || chat.summary.toLowerCase().includes(searchStr) || chat.content.toLowerCase().includes(searchStr);
         const matchesTags = state.selectedTags.length === 0 || state.selectedTags.every(tag => chat.tags.includes(tag));
         const matchesType = state.selectedType === 'all' || chat.type === state.selectedType;
-        const matchesSource = state.selectedSource === 'All' || chat.source === state.selectedSource;
+        const matchesSource = state.selectedSource === 'All' || chat.source === state.selectedSource || (state.selectedSource === SourceType.WEB && chat.type === ItemType.WEB);
         const matchesDateStart = !state.searchFilters.dateStart || chat.createdAt >= new Date(state.searchFilters.dateStart).getTime();
         const matchesDateEnd = !state.searchFilters.dateEnd || chat.createdAt <= new Date(state.searchFilters.dateEnd).getTime() + 86400000;
         const matchesArchived = state.showArchived ? !!chat.archived : !chat.archived;
@@ -630,6 +630,10 @@ const App: React.FC = () => {
           <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive', selectedType: ItemType.NOTE }))} className={typeRow(state.viewMode === 'archive' && state.selectedType === ItemType.NOTE)}>
             <PencilIcon className="w-4 h-4" /> Synthesis notes
             <span className={navCount}>{state.chats.filter(c => !c.archived && c.type === ItemType.NOTE).length}</span>
+          </button>
+          <button onClick={() => setState(prev => ({ ...prev, viewMode: 'archive', selectedType: ItemType.WEB }))} className={typeRow(state.viewMode === 'archive' && state.selectedType === ItemType.WEB)}>
+            <LinkIcon className="w-4 h-4" /> Web clips
+            <span className={navCount}>{state.chats.filter(c => !c.archived && c.type === ItemType.WEB).length}</span>
           </button>
         </div>
 

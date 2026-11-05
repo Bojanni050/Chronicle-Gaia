@@ -13,7 +13,9 @@ export enum SourceType {
 
 export enum ItemType {
   CHAT = 'chat',
-  NOTE = 'note'
+  NOTE = 'note',
+  /** A page saved with the browser clipper: document content, URL as source. */
+  WEB = 'web'
 }
 
 export enum Theme {

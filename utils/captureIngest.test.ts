@@ -99,6 +99,43 @@ describe('normalizeIngestChat', () => {
     expect(item.source).toBe('ChatGPT');
   });
 
+  it('stores a browser clip as a web object with the page URL as source', () => {
+    const { item, foundationPayload } = normalizeIngestChat(
+      {
+        content: '# Article\n\nBody',
+        title: 'Article',
+        url: 'https://www.example.com/a/b?c=1',
+        object: 'web',
+        source: 'https://www.example.com/a/b?c=1',
+        sourceProvider: 'web',
+      },
+      'clip-1'
+    );
+    expect(item.type).toBe('web');
+    expect(item.source).toBe('https://www.example.com/a/b?c=1');
+    // Foundation has no web object type: the mirror stays a chat capture.
+    expect(foundationPayload.sourceProvider).toBe('web');
+  });
+
+  it('falls back to the url, then to Web, when a clip carries no source', () => {
+    const withUrl = normalizeIngestChat(
+      { content: 'x', object: 'web', url: 'https://example.com/x' },
+      'clip-2'
+    );
+    expect(withUrl.item.source).toBe('https://example.com/x');
+    const bare = normalizeIngestChat({ content: 'x', object: 'web' }, 'clip-3');
+    expect(bare.item.source).toBe('Web');
+  });
+
+  it('rejects an unknown object kind and an empty source', () => {
+    expect(validateIngestChatInput({ content: 'x', object: 'image' }).details).toContain(
+      '"object" must be "chat" or "web"'
+    );
+    expect(validateIngestChatInput({ content: 'x', source: '  ' }).details).toContain(
+      '"source" must be a non-empty string'
+    );
+  });
+
   it('accepts epoch-seconds occurredAt', () => {
     const { item } = normalizeIngestChat({ content: 'x', occurredAt: 1760000000 }, 'id-3');
     expect(item.capture.occurredAt).toBe('2025-10-09T08:53:20.000Z');

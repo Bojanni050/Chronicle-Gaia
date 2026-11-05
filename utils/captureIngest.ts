@@ -60,6 +60,10 @@ export interface IngestChatInput {
   title?: string;
   url?: string;
   sourceProvider?: string;
+  /** Chronicle-side object kind. 'web' marks a browser clip; defaults to 'chat'. */
+  object?: string;
+  /** Where the object came from. For a web clip: the page URL. */
+  source?: string;
   occurredAt?: number | string;
   createdAt?: number | string;
   attachments?: IngestAttachment[];
@@ -88,6 +92,8 @@ const ALLOWED_KEYS = [
   'title',
   'url',
   'sourceProvider',
+  'object',
+  'source',
   'occurredAt',
   'createdAt',
   'attachments',
@@ -159,6 +165,12 @@ export function validateIngestChatInput(raw: any): IngestValidation {
   }
   if (raw.turns !== undefined && !Array.isArray(raw.turns)) {
     details.push('"turns" must be an array of {role, text}');
+  }
+  if (raw.object !== undefined && raw.object !== 'chat' && raw.object !== 'web') {
+    details.push('"object" must be "chat" or "web"');
+  }
+  if (raw.source !== undefined && (typeof raw.source !== 'string' || !raw.source.trim())) {
+    details.push('"source" must be a non-empty string');
   }
   if (raw.occurredAt !== undefined && toEpochMs(raw.occurredAt) === undefined) {
     details.push(`"occurredAt" is not a valid timestamp: ${String(raw.occurredAt)}`);
@@ -305,6 +317,7 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   const title = cleanString(raw.title) || (content.slice(0, 80) || 'Untitled conversation');
   const sourceProvider = toSourceProvider(raw.sourceProvider) || 'other';
   const url = cleanString(raw.url);
+  const isWeb = cleanString(raw.object)?.toLowerCase() === 'web';
   const occurredMs = toEpochMs(raw.occurredAt) ?? toEpochMs(raw.createdAt);
 
   const capture: NormalizedIngestChat['item']['capture'] = {
@@ -347,12 +360,12 @@ export function normalizeIngestChat(raw: IngestChatInput, id: string, now: numbe
   return {
     item: {
       id,
-      type: 'chat',
+      type: isWeb ? 'web' : 'chat',
       title,
       content,
       summary: '',
       tags: [],
-      source: toSourceType(sourceProvider),
+      source: isWeb ? cleanString(raw.source) || url || 'Web' : toSourceType(sourceProvider),
       createdAt,
       updatedAt,
       assets: assets.length ? assets : undefined,

@@ -11,8 +11,11 @@ rijper dan wat `plugin/content/webclip.js` zelf doet.
 - **`src/utils/chronicle-note-creator.ts`** (nieuw) — `saveToChronicle(fileContent, noteName, url)`
   POST't naar Chronicle's lokale ingest-listener (`{chronicleUrl}/ingest/chat`), met dezelfde
   payload-vorm (`content`, `title`, `url`, `sourceProvider: 'web'`, `occurredAt`) als
-  `plugin/service-worker.js` al gebruikt. Analoog aan `saveToObsidian()` in
-  `src/utils/obsidian-note-creator.ts`, die ongewijzigd is gebleven.
+  `plugin/service-worker.js` al gebruikt, plus `object: 'web'` en `source: <url>`: Chronicle
+  slaat een clip op als **web-object** (ItemType.WEB) met de pagina-URL als bron, in plaats van
+  als chat. Foundation krijgt hem nog steeds als chat-capture (daar bestaat geen web-type).
+  Analoog aan `saveToObsidian()` in `src/utils/obsidian-note-creator.ts`, die ongewijzigd is
+  gebleven.
 - **`src/utils/chronicle-connection.ts`** (nieuw) — haalt URL én ingest-token op bij de app
   via `GET /ingest/config` (nieuw endpoint in `services/ingest-listener.js`). Het token wordt
   bewust **niet** bewaard: `general_settings` staat in `storage.sync`, en een ingest-token is
@@ -67,7 +70,7 @@ alleen een browser-extensie-Origin, en nooit een CORS-header. Een webpagina kan 
 dus niet lezen; een ander lokaal proces kan dat wel — net als het `foundation.local.json` op
 deze machine. Zonder dat endpoint zou de gebruiker het token alsnog met de hand moeten plakken.
 
-De manifestversie is `1.7.1.3` (Chrome accepteert alleen 1–4 puntgescheiden integers; de
+De manifestversie is `1.7.1.4` (Chrome accepteert alleen 1–4 puntgescheiden integers; de
 eerdere `1.7.1-chronicle.1` zou bij het laden geweigerd zijn).
 
 ## Bekende afwijking buiten deze fork
