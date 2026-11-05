@@ -275,13 +275,17 @@
       }
     };
 
+    // De reveal-pass scrollt de échte tijdlijn. Bewaar de stand van de
+    // gebruiker en zet die in de finally terug: een capture mag nooit als
+    // bijeffect hebben dat je ineens bovenaan of onderaan staat.
+    const scroller = findChatScroller();
+    const restoreTop = scroller ? scroller.scrollTop : null;
     // Pas op: het scrollen zelf triggert MutationObserver en auto-capture;
     // revealing-uitgeschakeld via de flag hieronder.
     revealing = true;
     try {
       scan();
       await drainBlobs();
-      const scroller = findChatScroller();
       if (scroller) {
         scroller.scrollTop = 0;
         await sleep(300);
@@ -314,12 +318,21 @@
       scan();
       await drainBlobs();
     } finally {
-      revealing = false;
+      if (scroller && restoreTop !== null && scroller.scrollTop !== restoreTop) {
+        // De scroll-events van het terugzetten zijn van ons, niet van de
+        // gebruiker: anders zet de scroll-listener zichzelf 1,2 s op scherp.
+        scrollGuardUntil = Date.now() + 800;
+        scroller.scrollTop = restoreTop;
+        // De virtualisatie rendert de herstelde stand pas daarna; even wachten
+        // zodat de baseline bij wat je ziet hoort en niet bij een half-lege DOM.
+        await sleep(400);
+      }
       if (armed) {
         // Ravenbaseline op de nieuwe stand: zoveel leverde de export op —
         // auto-capture opnieuw vergelijken i.p.v. meteen "nieuw" te melden.
         baseline = signature();
       }
+      revealing = false;
     }
 
     // Samenstelling: eerst beurten (met echte index), daarna bijlagen gekleefd
@@ -637,13 +650,55 @@
   // de observer en dus scheduleCapture op zichzelf. Terwijl de collectie draait
   // negeren we captures — de baseline wordt na afloop op de nieuwe stand gezet.
   let revealing = false;
+  // De reveal-pass kaapt anders je scrollpositie: de observer vuurt namelijk
+  // óók op elke scrollstap (virtualisatie rendert tekst die net in de viewport
+  // komt), dus zonder deze rem startte een pass zodra je zelf door het gesprek
+  // scrollde. Daarom: een eigen scroll onderdrukt captures tot 1,2 s na de
+  // laatste scrollstap, en een pass start alleen als je onderaan staat — daar
+  // komt een antwoord binnen. Lees je hoger, dan blijft de capture pending tot
+  // je terug bij de onderkant bent.
+  let userScrolling = false;
+  let userScrollTimer = null;
+  let pendingCapture = false;
+  let scrollGuardUntil = 0;
+
+  function noteUserScroll() {
+    if (revealing || Date.now() < scrollGuardUntil) return;
+    userScrolling = true;
+    if (userScrollTimer) clearTimeout(userScrollTimer);
+    userScrollTimer = setTimeout(() => {
+      userScrolling = false;
+      if (pendingCapture) {
+        pendingCapture = false;
+        scheduleCapture();
+      }
+    }, 1200);
+  }
+
+  // scroll bubbelt niet, maar de capture-fase op document ziet hem wel.
+  document.addEventListener('scroll', noteUserScroll, { capture: true, passive: true });
+
+  /** Sta je (bijna) onderaan? Alleen daar is een reveal-pass niet storend. */
+  function nearChatBottom() {
+    const scroller = findChatScroller();
+    if (!scroller) return true;
+    const remaining = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    return remaining < Math.max(scroller.clientHeight * 1.5, 400);
+  }
 
   // Bewust zonder reveal-scroll: dit is de snelle wijzigingsdetector voor de
   // observer. Groei van een lopend antwoord gebeurt aan de onderkant (zichtbaar
   // en gerenderd), dus de zichtbare staart is voldoende als baseline.
+  //
+  // Scroll-invariant: alleen het aantal containers en de laatste beurt tellen.
+  // Eerder in het gesprek onthulde tekst (de virtualisatie rendert wat je
+  // voorbij scrolt) verandert de staart niet — anders lokte je eigen scroll een
+  // capture uit. Een groeiend of nieuw antwoord onderaan verandert hem wél.
   function signature() {
     const turns = turnsFromDom();
-    return turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
+    const tail = turns.length ? turns[turns.length - 1] : null;
+    const containers = document.querySelectorAll(SELECTORS.turnContainer).length;
+    return containers + ':' + (tail ? tail.text.length : 0);
   }
 
   function scheduleCapture() {
@@ -652,7 +707,16 @@
     settleTimer = setTimeout(() => {
       const sig = signature();
       if (!sig || sig === baseline) return;
+      // Zelf scrollen mag nooit een reveal-pass starten: dat is precies de
+      // scrollkaap. Lees je hoger in het gesprek, dan wacht de capture tot je
+      // weer onderaan staat (daar komt een nieuw antwoord binnen).
+      if (userScrolling || !nearChatBottom()) {
+        pendingCapture = true;
+        console.info('[Chronicle] auto-capture uitgesteld: je leest hoger in het gesprek');
+        return;
+      }
       baseline = sig;
+      pendingCapture = false;
       // Asynchroon sinds de blob-bijlagen: bytes lezen kan de waarde pas later
       // opleveren; alles in de promise om ordering te behouden.
       collectConversation().then((conv) => {
@@ -670,6 +734,7 @@
   function armAfterSettle() {
     armed = false;
     baseline = '';
+    pendingCapture = false;
     setTimeout(() => {
       baseline = signature();
       armed = true;
