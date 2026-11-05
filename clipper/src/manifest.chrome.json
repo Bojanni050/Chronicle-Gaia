@@ -3,7 +3,7 @@
 	"default_locale": "en",
 	"name": "Chronicle Web Clipper",
 	"homepage_url": "https://github.com/obsidianmd/obsidian-clipper",
-	"version": "1.7.1.2",
+	"version": "1.7.1.3",
 	"description": "Fork van Obsidian's officiele Web Clipper, omgebouwd om naar Chronicle (Chronicle-Gaia) te sturen in plaats van Obsidian. Zie clipper/CHRONICLE-FORK.md.",
 	"permissions": [
 		"activeTab",

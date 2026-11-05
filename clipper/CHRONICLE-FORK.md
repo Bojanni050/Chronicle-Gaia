@@ -36,8 +36,11 @@ rijper dan wat `plugin/content/webclip.js` zelf doet.
 
 ## Niet gewijzigd (bewust)
 
-- Alle content-extractie, templates, highlighter, reader-mode, i18n-strings ("Add to Obsidian"
-  in de UI staat dus nog letterlijk zo) — puur cosmetisch, functioneel onveranderd.
+- Alle content-extractie, templates, highlighter, reader-mode — puur cosmetisch, functioneel
+  onveranderd. De i18n-strings zijn ongewijzigd, behalve het hoofdknoplabel: `addToObsidian`
+  heet in `nl` en `en` nu "Toevoegen aan Chronicle" / "Add to Chronicle". De overige
+  tientallen locales zeggen nog "Obsidian"; die zie je alleen als je browser op zo'n taal staat,
+  en de sleutelnaam `addToObsidian` is intern gebleven om de templates niet te raken.
 - `host_permissions: ["<all_urls>", ...]` — deze extensie draait (anders dan `plugin/`'s
   activeTab-aanpak) een altijd-geladen content script op elke pagina (voor highlighter/reader
   mode). Dat is een bewust bredere permissie-voetafdruk dan de minimale aanpak in
@@ -62,7 +65,7 @@ alleen een browser-extensie-Origin, en nooit een CORS-header. Een webpagina kan 
 dus niet lezen; een ander lokaal proces kan dat wel — net als het `foundation.local.json` op
 deze machine. Zonder dat endpoint zou de gebruiker het token alsnog met de hand moeten plakken.
 
-De manifestversie is `1.7.1.2` (Chrome accepteert alleen 1–4 puntgescheiden integers; de
+De manifestversie is `1.7.1.3` (Chrome accepteert alleen 1–4 puntgescheiden integers; de
 eerdere `1.7.1-chronicle.1` zou bij het laden geweigerd zijn).
 
 ## Bekende afwijking buiten deze fork
