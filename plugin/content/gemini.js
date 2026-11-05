@@ -543,6 +543,33 @@
   }
 
   /**
+   * De vier toggle-selectors wijzen in de praktijk naar dezelfde menuknop. Ze
+   * allemaal aanroepen klikte hem dus open, dicht, open, dicht — en dan bleef de
+   * lijst leeg terwijl de code dacht dat hij hem probeerde te openen.
+   */
+  function sidebarToggleButton() {
+    for (const sel of SELECTORS.sidebarToggle) {
+      const button = document.querySelector(sel);
+      if (button) return { button, sel };
+    }
+    return null;
+  }
+
+  /**
+   * Wacht tot de lijst weer anchors heeft. Na het openen van een zwaar gesprek
+   * bouwt Gemini de zijbalk opnieuw op en is hij even leeg; meteen klikken sluit
+   * hem dan juist, waarna de bulk na drie gesprekken afbrak.
+   */
+  async function waitForSidebarLinks(ms = 4000) {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      if (visibleSidebarLinks().length) return true;
+      await sleep(250);
+    }
+    return Boolean(visibleSidebarLinks().length);
+  }
+
+  /**
    * Zorgt dat de gesprekkenlijst in de zijbalk er is. Gemini klapt die dicht
    * (of verbergt hem op smalle vensters); dan vindt harvestConversations nul
    * anchors en zou de bulk meteen afbreken.
@@ -552,17 +579,18 @@
     // dichtgeklapte zijbalk laat zijn links gewoon in de DOM staan, en de oude
     // check vond hem dan open terwijl er niets aan te klikken viel.
     if (visibleSidebarLinks().length) return true;
-    for (const sel of SELECTORS.sidebarToggle) {
-      const button = document.querySelector(sel);
-      if (!button) continue;
-      console.info('[Chronicle] gemini: zijbalk niet zichtbaar — openen via', sel, sidebarState());
-      button.click();
-      for (let i = 0; i < 8; i++) {
-        await sleep(500);
-        if (visibleSidebarLinks().length) return true;
-      }
-    }
-    return Boolean(visibleSidebarLinks().length);
+    // Eerst de herbouw de tijd geven. Klikken is een toggle: op een lege maar
+    // geopende zijbalk sluit hij hem, en dan jaagt de bulk zichzelf vast.
+    if (await waitForSidebarLinks(4000)) return true;
+    const toggle = sidebarToggleButton();
+    if (!toggle) return false;
+    console.info('[Chronicle] gemini: zijbalk leeg — openen via', toggle.sel, sidebarState());
+    toggle.button.click();
+    if (await waitForSidebarLinks(5000)) return true;
+    // Eén herkansing: die eerste klik sloot hem misschien. Daarna opgeven —
+    // eindeloos klikken maakt het alleen erger.
+    toggle.button.click();
+    return waitForSidebarLinks(5000);
   }
 
   async function harvestConversations() {
@@ -700,37 +728,35 @@
    */
   async function resetSidebar() {
     if (!visibleSidebarLinks().length) return false;
-    for (const sel of SELECTORS.sidebarToggle) {
-      const button = document.querySelector(sel);
-      if (!button) continue;
-      console.info('[Chronicle] gemini: zijbalk resetten via', sel);
-      button.click();
-      await sleep(800);
-      if (visibleSidebarLinks().length) {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        return false;
-      }
-      button.click();
-      for (let i = 0; i < 10; i++) {
-        await sleep(400);
-        if (visibleSidebarLinks().length) return true;
-      }
+    const toggle = sidebarToggleButton();
+    if (!toggle) return false;
+    console.info('[Chronicle] gemini: zijbalk resetten via', toggle.sel);
+    toggle.button.click();
+    await sleep(800);
+    if (visibleSidebarLinks().length) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return false;
+    }
+    toggle.button.click();
+    for (let i = 0; i < 10; i++) {
+      await sleep(400);
+      if (visibleSidebarLinks().length) return true;
     }
     return false;
   }
 
   async function scrollToFindAnchor(conv) {
     const id = typeof conv === 'string' ? conv : conv.id;
+    const direct = findAnchor(id);
+    if (direct) return direct;
+    // Lege lijst: eerst laten herbouwen, dan pas zoeken. Een sweep over een
+    // lege lijst kost alleen tijd en verandert niets.
+    if (!visibleSidebarLinks().length && !(await ensureSidebarOpen())) {
+      console.info('[Chronicle] gemini bulk: zijbalk leeg en niet te openen:', id, sidebarState());
+      return null;
+    }
     let anchor = await scrollSidebarTo(conv);
     if (anchor) return anchor;
-    // Eén herkansing, maar alleen als de zijbalk niet zichtbaar is: anders is
-    // het precies dezelfde sweep nog eens doen zonder dat er iets veranderde.
-    if (!visibleSidebarLinks().length && (await ensureSidebarOpen())) {
-      await sleep(400);
-      anchor = await scrollSidebarTo(conv);
-      if (anchor) return anchor;
-    }
     // De zijbalk is er wél, maar dit ene gesprek komt niet tevoorschijn. Dat is
     // meestal een vastgelopen lijst: paneel opnieuw opbouwen en het nog eens
     // proberen. Duurt ~2 s, dus pas hier — vlak voor de skip.
