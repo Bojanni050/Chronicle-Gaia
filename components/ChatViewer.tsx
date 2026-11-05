@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { ChatEntry, Settings, ItemType, Link } from '../types';
 import { XIcon, TagIcon, NetworkIcon, MessageIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, PencilIcon, SearchIcon, PlusIcon, BoltIcon, ArchiveIcon } from './Icons';
 import { parseChatMessages, Message } from '../utils/chatUtils';
+import { displaySource } from '../utils/sourceLabel';
 import { ChatCard } from './ChatCard';
 import { cosineSimilarity } from '../utils/vectorUtils';
 import { ChroniclePulse } from './ChroniclePulse';
@@ -370,7 +371,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                          <div>
                              <h1 className="text-4xl sm:text-5xl font-light text-earth-dark dark:text-white font-display tracking-[-0.04em] leading-tight">{chat.title}</h1>
                             <div className="flex items-center gap-2 text-[10px] font-black text-moss-brown uppercase tracking-[0.2em] mt-1">
-                                <span>{isNote ? 'PERSONAL SYNTHESIS' : chat.source}</span>
+                                <span>{isNote ? 'PERSONAL SYNTHESIS' : displaySource(chat.source, chat.capture?.url)}</span>
                                 <span>•</span>
                                 <span>{formattedDate}</span>
                             </div>

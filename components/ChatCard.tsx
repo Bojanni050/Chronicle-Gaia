@@ -2,6 +2,7 @@
 import React from 'react';
 import { ChatEntry, SourceType, ItemType } from '../types';
 import { TagIcon, MessageIcon, PencilIcon, OpenAIIcon, ClaudeIcon, GeminiIcon, MistralIcon, TerminalIcon } from './Icons';
+import { displaySource } from '../utils/sourceLabel';
 
 interface ChatCardProps {
   chat: ChatEntry;
@@ -62,7 +63,7 @@ export const ChatCard: React.FC<ChatCardProps> = ({ chat, onClick, isActive, onT
 
       <div className="flex items-center justify-between mt-2.5 gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <SourceBadge source={chat.source} type={chat.type || ItemType.CHAT} />
+          <SourceBadge source={displaySource(chat.source, chat.capture?.url)} type={chat.type || ItemType.CHAT} />
           {chat.tags.slice(0, 2).map(tag => {
             const isFiltering = activeRelatedTags.includes(tag);
             return (
