@@ -134,7 +134,7 @@
 							<div class="setting-group">
 								<div class="setting-item setting-item-heading"><h3>Chronicle</h3></div>
 								<div class="setting-items">
-								<div class="setting-item-description">Waar clips naartoe gaan: Chronicle's lokale ingest-listener (poort 4580 standaard), met het token dat de Chronicle-app (foundation.local.json / CHRONICLE_INGEST_TOKEN) gebruikt.</div>
+								<div class="setting-item-description">Waar clips naartoe gaan: Chronicle's lokale ingest-listener (poort 4580 standaard). De URL en het ingest-token worden automatisch bij de Chronicle-app opgehaald — je hoeft geen token te plakken.</div>
 								<div class="setting-item mod-horizontal">
 									<div class="setting-item-info">
 										<label for="chronicle-url-input">Chronicle URL</label>
@@ -145,10 +145,11 @@
 								</div>
 								<div class="setting-item mod-horizontal">
 									<div class="setting-item-info">
-										<label for="chronicle-token-input">Chronicle token</label>
+										<span>Verbinding</span>
+										<div class="setting-item-description" id="chronicle-status">Nog niet gecontroleerd.</div>
 									</div>
 									<div class="setting-item-control">
-										<input type="password" id="chronicle-token-input" placeholder="ingest-token" autocomplete="off" spellcheck="false" />
+										<button type="button" id="chronicle-test-btn">Test verbinding</button>
 									</div>
 								</div>
 								</div>

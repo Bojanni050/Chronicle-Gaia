@@ -27,6 +27,13 @@
  *   2. foundation.local.json { "ingestToken": "..." } (gitignored)
  *   3. the Foundation token (shared local secret; see electron-main.js)
  *
+ * Endpoints:
+ *   GET  /health            — liveness for the app and scripts
+ *   GET  /ingest/config     — listener URL + token for browser extensions
+ *                             (loopback Host + extension Origin only; see below)
+ *   POST /ingest/chat       — a conversation or web clip (bearer token)
+ *   POST /ingest/attachment — attachment bytes for a just-ingested chat
+ *
  * Binds 127.0.0.1 only. Never 0.0.0.0: the listener is for the plugin on this
  * machine, not for the network.
  */
@@ -617,10 +624,52 @@ function startIngestListener({ pool, getMainWindow, resolveFoundationConfig, mir
     return true;
   };
 
+  /**
+   * GET /ingest/config is the hand-off for browser extensions: it lets the
+   * clipper discover the listener URL and the ingest token instead of asking
+   * the user to copy the token out of foundation.local.json.
+   *
+   * The token is not a local secret (it already sits in a file on this
+   * machine), but it must not be readable by web pages. So:
+   *   - Host must be loopback (blocks DNS rebinding, where a page reaches
+   *     127.0.0.1 but carries the attacker's Host header).
+   *   - Origin, when present, must be a browser-extension origin. Requests
+   *     from http(s) pages are refused instead of relying on CORS alone.
+   *   - No Access-Control-Allow-Origin is ever sent, so even a request that
+   *     slips through cannot be read by a page.
+   * Any local process can call this, just as it can read the config file.
+   */
+  const CONFIG_ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '[::1]', '::1'];
+  const EXTENSION_ORIGIN = /^(chrome|moz|safari-web|ms-browser)-extension:\/\/[a-z0-9-]+$/i;
+
+  const allowedConfigRequest = (req) => {
+    const host = String(req.headers.host || '').toLowerCase();
+    const hostname = host.replace(/:\d+$/, '');
+    if (!CONFIG_ALLOWED_HOSTS.includes(hostname)) return 'forbidden host';
+    const origin = String(req.headers.origin || '');
+    if (origin && !EXTENSION_ORIGIN.test(origin)) return 'forbidden origin';
+    return null;
+  };
+
   const server = http.createServer(async (req, res) => {
     try {
       if (req.method === 'GET' && req.url === '/health') {
         return sendJson(res, 200, { ok: true, service: 'chronicle-ingest' });
+      }
+      if (req.method === 'GET' && req.url === '/ingest/config') {
+        const denial = allowedConfigRequest(req);
+        if (denial) return sendJson(res, 403, { error: denial });
+        if (!token) {
+          return sendJson(res, 409, {
+            error: 'no ingest token configured — set CHRONICLE_INGEST_TOKEN or add foundation.local.json',
+          });
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          service: 'chronicle-ingest',
+          listenerUrl: `http://127.0.0.1:${port}`,
+          token,
+        });
       }
       if (req.method === 'POST' && req.url === '/ingest/attachment') {
         if (!authorized(req, res)) return;

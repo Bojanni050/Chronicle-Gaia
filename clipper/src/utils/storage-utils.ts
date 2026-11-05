@@ -7,7 +7,6 @@ export type { Settings, ModelConfig, PropertyType, HistoryEntry, Provider, Ratin
 export let generalSettings: Settings = {
 	vaults: [],
 	chronicleUrl: 'http://127.0.0.1:4580',
-	chronicleToken: '',
 	betaFeatures: false,
 	legacyMode: false,
 	silentOpen: false,
@@ -69,7 +68,6 @@ interface StorageData {
 		openBehavior?: boolean | 'popup' | 'embedded';
 		saveBehavior?: 'addToObsidian' | 'copyToClipboard' | 'saveFile';
 		chronicleUrl?: string;
-		chronicleToken?: string;
 	};
 	vaults?: string[];
 	highlighter_settings?: {
@@ -124,7 +122,6 @@ export async function loadSettings(): Promise<Settings> {
 	const defaultSettings: Settings = {
 		vaults: [],
 		chronicleUrl: 'http://127.0.0.1:4580',
-		chronicleToken: '',
 		showMoreActionsButton: false,
 		betaFeatures: false,
 		legacyMode: false,
@@ -188,7 +185,6 @@ export async function loadSettings(): Promise<Settings> {
 	const loadedSettings: Settings = {
 		vaults: sanitizedVaults.length > 0 ? sanitizedVaults : defaultSettings.vaults,
 		chronicleUrl: data.general_settings?.chronicleUrl || defaultSettings.chronicleUrl,
-		chronicleToken: data.general_settings?.chronicleToken || defaultSettings.chronicleToken,
 		showMoreActionsButton: data.general_settings?.showMoreActionsButton ?? defaultSettings.showMoreActionsButton,
 		betaFeatures: data.general_settings?.betaFeatures ?? defaultSettings.betaFeatures,
 		legacyMode: data.general_settings?.legacyMode ?? defaultSettings.legacyMode,
@@ -249,7 +245,6 @@ export async function saveSettings(settings?: Partial<Settings>): Promise<void> 
 			openBehavior: generalSettings.openBehavior,
 			saveBehavior: generalSettings.saveBehavior,
 			chronicleUrl: generalSettings.chronicleUrl,
-			chronicleToken: generalSettings.chronicleToken,
 		},
 		highlighter_settings: {
 			highlighterEnabled: generalSettings.highlighterEnabled,

@@ -153,6 +153,15 @@
 			font-weight: var(--clipper-button-font-weight);
 			font-size: var(--clipper-button-font-size);
 		}
+		.clip-status {
+			margin: 0;
+			padding: 0.5rem 0.625rem;
+			border-radius: var(--radius-s);
+			background-color: var(--background-modifier-error);
+			color: var(--text-error);
+			font-size: var(--font-ui-smaller);
+			line-height: 1.35;
+		}
 	}
 	.vault-path-container {
 		display: flex;

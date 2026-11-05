@@ -70,10 +70,12 @@ export interface ReaderSettings {
 
 export interface Settings {
 	vaults: string[];
-	/** Base URL of Chronicle's local ingest listener, e.g. http://127.0.0.1:4580. */
+	/**
+	 * Base URL of Chronicle's local ingest listener, e.g. http://127.0.0.1:4580.
+	 * The ingest token is not stored here: it is fetched from the listener's
+	 * /ingest/config on demand (see utils/chronicle-connection.ts).
+	 */
 	chronicleUrl: string;
-	/** Bearer token for Chronicle's ingest listener (CHRONICLE_INGEST_TOKEN). */
-	chronicleToken: string;
 	showMoreActionsButton: boolean;
 	betaFeatures: boolean;
 	legacyMode: boolean;

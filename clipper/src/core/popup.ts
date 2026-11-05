@@ -618,6 +618,32 @@ function showError(messageKey: string): void {
 		document.body.classList.add('has-error');
 	}
 }
+/**
+ * Chronicle failures are retryable (app not running, stale token, 4xx) and
+ * the popup must stay usable, so they get an inline line instead of the
+ * full-page error that showError() swaps in.
+ */
+function showClipError(message: string): void {
+	const status = document.getElementById('clip-status');
+	if (!status) {
+		showError(message);
+		return;
+	}
+	status.textContent = message;
+	status.style.display = 'block';
+	setTimeout(() => {
+		status.style.display = 'none';
+	}, 12000);
+}
+
+function clearClipError(): void {
+	const status = document.getElementById('clip-status');
+	if (status) {
+		status.textContent = '';
+		status.style.display = 'none';
+	}
+}
+
 function clearError(): void {
 	const errorMessage = document.querySelector('.error-message') as HTMLElement;
 	const clipper = document.querySelector('.clipper') as HTMLElement;
@@ -1314,6 +1340,7 @@ function determineMainAction() {
 
 async function handleClipObsidian(): Promise<void> {
 	if (!currentTemplate) return;
+	clearClipError();
 
 	const vaultDropdown = document.getElementById('vault-select') as HTMLSelectElement;
 	const noteContentField = document.getElementById('note-content-field') as HTMLTextAreaElement;
@@ -1364,7 +1391,7 @@ async function handleClipObsidian(): Promise<void> {
 		}
 	} catch (error) {
 		console.error('Error in handleClipObsidian:', error);
-		showError('failedToSaveFile');
+		showClipError(error instanceof Error && error.message ? error.message : getMessage('failedToSaveFile'));
 		throw error;
 	}
 }

@@ -9,7 +9,6 @@ export default {} as any;
 export const generalSettings: Settings = {
 	vaults: [],
 	chronicleUrl: 'http://127.0.0.1:4580',
-	chronicleToken: '',
 	betaFeatures: false,
 	legacyMode: false,
 	silentOpen: false,

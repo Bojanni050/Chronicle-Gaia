@@ -18,6 +18,7 @@ import { getClipHistory } from '../utils/storage-utils';
 import dayjs from 'dayjs';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import { showModal, hideModal } from '../utils/modal-utils';
+import { clearChronicleConnection, resolveChronicleConnection } from '../utils/chronicle-connection';
 
 dayjs.extend(weekOfYear);
 
@@ -248,18 +249,40 @@ function initializeAutoSave(): void {
 	}
 }
 
-/** Vult de Chronicle URL/token-velden op basis van de geladen settings. */
+/** Vult de Chronicle-URL en controleert de verbinding met de lokale app. */
 function initializeChronicleSettings(): void {
 	const urlInput = document.getElementById('chronicle-url-input') as HTMLInputElement;
-	const tokenInput = document.getElementById('chronicle-token-input') as HTMLInputElement;
+	const status = document.getElementById('chronicle-status');
+	const testButton = document.getElementById('chronicle-test-btn') as HTMLButtonElement | null;
 	if (urlInput) urlInput.value = generalSettings.chronicleUrl;
-	if (tokenInput) tokenInput.value = generalSettings.chronicleToken;
+	if (!testButton) return;
+
+	const check = async (force: boolean) => {
+		if (status) status.textContent = 'Verbinden…';
+		testButton.disabled = true;
+		try {
+			if (force) clearChronicleConnection();
+			const connection = await resolveChronicleConnection({ force });
+			if (status) status.textContent = `Verbonden met ${connection.baseUrl}. Clips worden daar afgeleverd.`;
+			if (urlInput) urlInput.value = connection.baseUrl;
+		} catch (error) {
+			if (status) {
+				status.textContent = error instanceof Error ? error.message : String(error);
+			}
+		} finally {
+			testButton.disabled = false;
+		}
+	};
+
+	testButton.addEventListener('click', () => { void check(true); });
+
+	// Silent probe on open: gives immediate feedback without a stored token.
+	void check(false);
 }
 
 function saveSettingsFromForm(): void {
 	const openBehaviorDropdown = document.getElementById('open-behavior-dropdown') as HTMLSelectElement;
 	const chronicleUrlInput = document.getElementById('chronicle-url-input') as HTMLInputElement;
-	const chronicleTokenInput = document.getElementById('chronicle-token-input') as HTMLInputElement;
 	const showMoreActionsToggle = document.getElementById('show-more-actions-toggle') as HTMLInputElement;
 	const betaFeaturesToggle = document.getElementById('beta-features-toggle') as HTMLInputElement;
 	const legacyModeToggle = document.getElementById('legacy-mode-toggle') as HTMLInputElement;
@@ -271,7 +294,6 @@ function saveSettingsFromForm(): void {
 	const updatedSettings = {
 		...generalSettings, // Keep existing settings
 		chronicleUrl: chronicleUrlInput?.value?.trim() || generalSettings.chronicleUrl,
-		chronicleToken: chronicleTokenInput?.value ?? generalSettings.chronicleToken,
 		openBehavior: (openBehaviorDropdown?.value as Settings['openBehavior']) ?? generalSettings.openBehavior,
 		showMoreActionsButton: showMoreActionsToggle?.checked ?? generalSettings.showMoreActionsButton,
 		betaFeatures: betaFeaturesToggle?.checked ?? generalSettings.betaFeatures,
