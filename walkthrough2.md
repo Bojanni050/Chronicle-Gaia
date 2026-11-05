@@ -200,3 +200,9 @@
 - Findings: de extensie heette al "Chronicle Web Clipper", maar de hoofdknop en de save-behavior-dropdown zeiden nog "Toevoegen aan Obsidian". Verwarrend, want er gaat niets naar Obsidian.
 - Conclusions: alleen het label aanpassen, niet de sleutelnaam. `addToObsidian` is een interne key die ook in templates, stats en de saveBehavior-union zit; die hernoemen levert churn op zonder gebruikerswinst. Dus `nl`/`en` krijgen nieuwe tekst, de overige locales blijven staan (alleen zichtbaar bij een browser in die taal).
 - Actions: `clipper/src/_locales/nl/messages.json` + `_locales/en/messages.json` (`addToObsidian` → "Toevoegen aan Chronicle" / "Add to Chronicle"), `clipper/src/settings.html` (default optietekst), `clipper/src/manifest.chrome.json` 1.7.1.3, `clipper/CHRONICLE-FORK.md`. validated: `npm run build:chrome` groen ✓, `dist/manifest.json` 1.7.1.3 en `dist/_locales` bevat de nieuwe teksten ✓. Extensie moet nog herladen worden.
+
+## 2026-11-05 (Clipper: kluis- en padveld verborgen)
+
+- Findings: de popup toonde nog een kluis-dropdown en een padveld. Een clip gaat rechtstreeks naar Chronicle, dus die velden suggereren een bestemming die niet bestaat.
+- Conclusions: verbergen in CSS in plaats van de markup slopen. De popup-JS zet op twaalf plekken `style.display` en leest `path-name-field`/`vault-select` zonder null-check; de elementen weghalen betekent twaalf guards en nul winst. Eén regel `display: none !important` in de bestaande `.vault-path-container`-regel wint van de inline `display: flex` die de template-code zet, en werkt zowel in de popup als de side panel (beide `.clipper`).
+- Actions: `clipper/src/styles/popup.scss` (`display: flex` → `display: none !important`), `clipper/CHRONICLE-FORK.md`. validated: `npm run build:chrome` groen ✓, `dist/style.css` bevat `.clipper .vault-path-container{display:none !important;…}` ✓. Extensie herladen om te zien.

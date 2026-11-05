@@ -19,8 +19,10 @@ rijper dan wat `plugin/content/webclip.js` zelf doet.
   per machine. De verbinding leeft in het geheugen van de extensie; na een 401 (app herstart
   met een nieuw token) wordt de cache gewist en volgt één retry.
 - **`src/core/popup.ts`** — `handleClipObsidian()` roept nu `saveToChronicle(...)` i.p.v.
-  `saveToObsidian(...)`. Vault/pad/behavior (Obsidian-vaultconcepten) blijven in de UI staan
-  maar worden niet meer gebruikt voor de aflevering zelf — alleen voor `incrementStat`
+  `saveToObsidian(...)`. Vault/pad/behavior (Obsidian-vaultconcepten) zitten nog in de code
+  maar zijn verborgen (`.vault-path-container { display: none !important }` in
+  `styles/popup.scss`, want de JS zet inline `display: flex`), en worden alleen nog gebruikt
+  voor `incrementStat`
   (de ingebouwde gebruiksstatistieken, verder ongemoeid). CLI-fouten komen nu in een
   inline regel (`#clip-status`) i.p.v. de popup te vervangen door "failed to save file",
   zodat een niet-draaiende app of een 4xx leesbaar is en de knop bruikbaar blijft.

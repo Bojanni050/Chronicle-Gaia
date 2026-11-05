@@ -164,7 +164,7 @@
 		}
 	}
 	.vault-path-container {
-		display: flex;
+		display: none !important;
 		flex-direction: row;
 		gap: 0.625rem;
 		#vault-container {
