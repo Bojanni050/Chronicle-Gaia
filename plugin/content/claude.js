@@ -426,7 +426,7 @@
     return { list: fromDom, source: fromDom.length ? 'sidebar' : null, reason: fromDom.length ? null : 'lijst-API faalde en de zijbalk gaf geen links' };
   }
 
-  async function collectBulkConversations(onProgress) {
+  async function collectBulkConversations(onProgress, onCollected) {
     const { list, source, reason } = await collectAllConversations();
     const org = await resolveOrgId();
     const out = [];
@@ -436,6 +436,7 @@
     // agoramachina/claude-exporter: klein genoeg om de API niet te
     // overbelasten (429's), snel genoeg om niet eeuwig te duren.
     const BATCH = 3;
+    let nextLog = 25;
     for (let b = 0; b < list.length; b += BATCH) {
       const batch = list.slice(b, b + BATCH);
       const results = await Promise.all(batch.map(async (conv) => {
@@ -470,8 +471,17 @@
       }));
       for (const conv of results) {
         i++;
-        if (conv) out.push(conv);
+        if (conv) {
+          out.push(conv);
+          // Meteen doorleveren: bij honderden gesprekken duurt ophalen minuten
+          // en tot het eind gebeurde er in Chronicle niets zichtbaars.
+          if (onCollected) await onCollected(conv);
+        }
         onProgress && onProgress(i, list.length, conv ? (conv.title || '') : '—');
+      }
+      if (i >= nextLog) {
+        console.info('[Chronicle] claude bulk: opgehaald', i, '/', list.length);
+        nextLog = i + 25;
       }
       if (b + BATCH < list.length) {
         await new Promise((r) => setTimeout(r, 200));
@@ -480,13 +490,42 @@
     return { conversations: out, failed, total: list.length, source, reason: reason || null };
   }
 
+  // Net als bij Gemini in 0.6.5: lever tijdens het ophalen. Claude heeft geen
+  // DOM-navigatie nodig (de API geeft alles), maar bij honderden gesprekken
+  // duurt het ophalen minuten en werd er tot het einde niets geleverd — de knop
+  // liep wel door, Chronicle bleef leeg.
+  const BULK_BATCH = 5;
+
   const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
     const ui = window.__chronicleUI;
+    const batch = [];
+    const totals = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
+
+    const addTotals = (report) => {
+      for (const key of Object.keys(totals)) totals[key] += Number(report[key]) || 0;
+    };
+
+    const flush = async () => {
+      if (!batch.length) return;
+      const chunk = batch.splice(0, batch.length);
+      const report = await ui.deliverMany(chunk, (sum, _size, shipped) => {
+        bulkButton.textContent = `⇊ leveren ${shipped}/${chunk.length} • nieuw ${sum.created} • bijgewerkt ${sum.updated} • bekend ${sum.duplicates}`;
+      });
+      addTotals(report);
+      console.info('[Chronicle] claude bulk: geleverd', chunk.length, 'gesprekken', totals);
+    };
+
     try {
       bulkButton.textContent = '⇊ lijst ophalen…';
-      const { conversations, failed, total, source, reason } = await collectBulkConversations((i, count, name) => {
-        bulkButton.textContent = `⇊ ophalen ${i}/${count}${name && name !== '—' ? ' • ' + name.slice(0, 30) : ''}`;
-      });
+      const { conversations, failed, total, source, reason } = await collectBulkConversations(
+        (i, count, name) => {
+          bulkButton.textContent = `⇊ ophalen ${i}/${count}${name && name !== '—' ? ' • ' + name.slice(0, 30) : ''}`;
+        },
+        async (conv) => {
+          batch.push(conv);
+          if (batch.length >= BULK_BATCH) await flush();
+        }
+      );
       if (!conversations.length) {
         // Onderscheid maken tussen "lijst onvindbaar" en "lijst gevonden maar
         // niets leesbaar": dat scheelt de volgende keer zoeken in het donker.
@@ -503,15 +542,27 @@
         }, 8000);
         return;
       }
+      await flush();
       console.info('[Chronicle] claude bulk:', conversations.length, 'van', total, 'gesprekken via', source);
-      await ui.exportManyToChronicle(bulkButton, conversations);
-      if (failed) {
-        bulkButton.textContent += ` • ${failed} overgeslagen`;
-        bulkButton.title = `${failed} gesprek(ken) konden niet worden opgehaald — zie console`;
-      }
+      bulkButton.textContent = `⇊ klaar • nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates}`;
+      if (totals.failed) bulkButton.textContent += ` • ${totals.failed} mislukt`;
+      if (totals.gaps) bulkButton.textContent += ` • ${totals.gaps} bestand(en) niet`;
+      if (failed) bulkButton.textContent += ` • ${failed} overgeslagen`;
+      bulkButton.title = failed
+        ? `${failed} gesprek(ken) konden niet worden opgehaald — zie console`
+        : '';
+      setTimeout(() => {
+        bulkButton.textContent = '⇊ Alles naar Chronicle';
+        bulkButton.title = '';
+      }, 10000);
     } catch (err) {
+      // Wat al geleverd is, blijft geleverd: alleen de rest is misgegaan.
       bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
-      setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
+      bulkButton.title = `al geleverd: nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates}`;
+      setTimeout(() => {
+        bulkButton.textContent = '⇊ Alles naar Chronicle';
+        bulkButton.title = '';
+      }, 8000);
     }
   });
 
