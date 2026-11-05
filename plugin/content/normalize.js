@@ -43,6 +43,7 @@
   const uiButtons = { export: null, bulk: null };
   let uiPanel = null;
   let uiToggle = null;
+  let uiOptions = null;
 
   const BUTTON_STYLE = {
     padding: '8px 14px',
@@ -95,6 +96,9 @@
     });
     for (const button of [uiButtons.bulk, uiButtons.export]) {
       if (button) button.style.display = uiState.collapsed ? 'none' : '';
+    }
+    if (uiOptions) {
+      uiOptions.style.display = !uiState.collapsed && uiOptions.dataset.open === 'true' ? 'flex' : 'none';
     }
     if (uiToggle) {
       uiToggle.textContent = uiState.collapsed ? 'Chronicle' : '⌄';
@@ -436,6 +440,27 @@
     return button;
   }
 
+  /**
+   * Hangt een provider-eigen blok (het bulk-filterformulier) direct boven de
+   * bulk-knop. Openen/sluiten gaat via `setBulkOptionsOpen`, zodat de
+   * inklap-toggle het blok niet per ongeluk weer tevoorschijn haalt.
+   */
+  function mountBulkOptions(node) {
+    const panel = ensurePanel();
+    uiOptions = node;
+    if (!node.id) node.id = 'chronicle-bulk-options';
+    node.dataset.open = 'false';
+    panel.insertBefore(node, uiButtons.bulk || uiToggle);
+    layoutPanel();
+    return node;
+  }
+
+  function setBulkOptionsOpen(open) {
+    if (!uiOptions) return;
+    uiOptions.dataset.open = open ? 'true' : 'false';
+    layoutPanel();
+  }
+
   function setBulkProgress(button, report) {
     const done = report.created + report.updated + report.duplicates + report.failed + report.queued;
     button.textContent = `⇊ ${done}/${report.total} • nieuw ${report.created} • bijgewerkt ${report.updated} • bekend ${report.duplicates}${report.failed ? ' • mislukt ' + report.failed : ''}${report.queued ? ' • wachtrij ' + report.queued : ''}`;
@@ -538,6 +563,8 @@
     buildConversation,
     bindToolbarClick,
     makeBulkButton,
+    mountBulkOptions,
+    setBulkOptionsOpen,
     toEpochMs,
     transcriptFromTurns,
     innerTextWithCodeFences,
