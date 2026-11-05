@@ -71,7 +71,9 @@
   function sidebarState() {
     const scroller = document.querySelector(SELECTORS.sidebarScroller);
     const links = Array.from(document.querySelectorAll(SELECTORS.sidebarLink));
-    const visible = links.filter((a) => a.getClientRects().length > 0).length;
+    const visible = links.filter((a) =>
+      Array.from(a.getClientRects()).some((r) => r.width > 0 && r.height > 0)
+    ).length;
     return {
       links: links.length,
       visible,
@@ -534,9 +536,10 @@
 
   /** Aantal anchors dat écht zichtbaar is (niet alleen in de DOM staat). */
   function visibleSidebarLinks() {
-    return Array.from(document.querySelectorAll(SELECTORS.sidebarLink)).filter(
-      (a) => a.getClientRects().length > 0
-    );
+    return Array.from(document.querySelectorAll(SELECTORS.sidebarLink)).filter((a) => {
+      const rects = a.getClientRects();
+      return Array.from(rects).some((r) => r.width > 0 && r.height > 0);
+    });
   }
 
   /**
@@ -688,6 +691,35 @@
     return findAnchor(id);
   }
 
+  /**
+   * Laatste redmiddel: paneel dicht en weer open, zodat Gemini de lijst
+   * opnieuw opbouwt — een vastgelopen virtualisatie-cache verdwijnt daarmee.
+   * Alleen als de zijbalk zichtbaar is (anders is er niets om te herstellen) en
+   * alleen als de knop aantoonbaar de lijst wegneemt: doet hij iets anders
+   * (menu, overlay), dan sluiten we dat en geven we het op.
+   */
+  async function resetSidebar() {
+    if (!visibleSidebarLinks().length) return false;
+    for (const sel of SELECTORS.sidebarToggle) {
+      const button = document.querySelector(sel);
+      if (!button) continue;
+      console.info('[Chronicle] gemini: zijbalk resetten via', sel);
+      button.click();
+      await sleep(800);
+      if (visibleSidebarLinks().length) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return false;
+      }
+      button.click();
+      for (let i = 0; i < 10; i++) {
+        await sleep(400);
+        if (visibleSidebarLinks().length) return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
   async function scrollToFindAnchor(conv) {
     const id = typeof conv === 'string' ? conv : conv.id;
     let anchor = await scrollSidebarTo(conv);
@@ -695,6 +727,14 @@
     // Eén herkansing, maar alleen als de zijbalk niet zichtbaar is: anders is
     // het precies dezelfde sweep nog eens doen zonder dat er iets veranderde.
     if (!visibleSidebarLinks().length && (await ensureSidebarOpen())) {
+      await sleep(400);
+      anchor = await scrollSidebarTo(conv);
+      if (anchor) return anchor;
+    }
+    // De zijbalk is er wél, maar dit ene gesprek komt niet tevoorschijn. Dat is
+    // meestal een vastgelopen lijst: paneel opnieuw opbouwen en het nog eens
+    // proberen. Duurt ~2 s, dus pas hier — vlak voor de skip.
+    if (visibleSidebarLinks().length && (await resetSidebar())) {
       await sleep(400);
       anchor = await scrollSidebarTo(conv);
       if (anchor) return anchor;
