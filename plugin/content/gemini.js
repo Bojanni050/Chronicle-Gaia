@@ -53,6 +53,36 @@
     return match ? match[1] : null;
   }
 
+  /**
+   * Zoekt de zijbalk-anchor van een gesprek op id in plaats van op een exacte
+   * href. Gemini hangt soms query-parameters aan zijn links (`/app/<id>?…`), en
+   * dan vond de oude `a[href="/app/<id>"]` niets terwijl het gesprek er wel
+   * stond — met "anchor niet gevonden" en een overgeslagen gesprek als gevolg.
+   */
+  function findAnchor(id) {
+    if (!id) return null;
+    for (const anchor of document.querySelectorAll(SELECTORS.sidebarLink)) {
+      if (idFromHref(anchor.getAttribute('href')) === id) return anchor;
+    }
+    return null;
+  }
+
+  /** Compacte momentopname van de zijbalk, voor als zoeken mislukt. */
+  function sidebarState() {
+    const scroller = document.querySelector(SELECTORS.sidebarScroller);
+    const links = Array.from(document.querySelectorAll(SELECTORS.sidebarLink));
+    const visible = links.filter((a) => a.getClientRects().length > 0).length;
+    return {
+      links: links.length,
+      visible,
+      scroller: Boolean(scroller),
+      height: scroller ? scroller.clientHeight : 0,
+      scrollHeight: scroller ? scroller.scrollHeight : 0,
+      scrollTop: scroller ? Math.round(scroller.scrollTop) : 0,
+      sample: links.length ? links[0].getAttribute('href') : null,
+    };
+  }
+
   /** Eerste selector die niet-lege tekst oplevert, mét codefences. */
   function firstMatchText(root, selectors) {
     for (const sel of selectors) {
@@ -96,7 +126,7 @@
   /** De gesprekstitel staat in de zijbalk bij de bijbehorende anchor. */
   function titleFromSidebar(id) {
     if (id) {
-      const anchor = document.querySelector(`a[href="/app/${id}"]`);
+      const anchor = findAnchor(id);
       if (anchor) {
         const title = (anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
         if (title) return title;
@@ -283,6 +313,13 @@
       for (const s of state.values()) {
         for (const rec of s.atts.values()) {
           if (rec.kind !== 'blob' || rec.bytes || rec.failed) continue;
+          // Eén blob-fetch mag 15 s duren (blobBytes heeft die abort). Zonder
+          // deze rem kan een gesprek met een paar afbeeldingen het budget van
+          // 30 s ruim overschrijden — gemeten: 60,9 s in de bulk.
+          if (deadline && Date.now() > deadline) {
+            rec.failed = true;
+            continue;
+          }
           try {
             rec.bytes = await blobBytes(rec.src);
           } catch (err) {
@@ -495,35 +532,55 @@
   // door op een anchor te klikken — niet via directe navigatie. Vandaar het
   // klikken + stabiliteitswacht uit gemini-chat-exporter.
 
+  /** Aantal anchors dat écht zichtbaar is (niet alleen in de DOM staat). */
+  function visibleSidebarLinks() {
+    return Array.from(document.querySelectorAll(SELECTORS.sidebarLink)).filter(
+      (a) => a.getClientRects().length > 0
+    );
+  }
+
   /**
    * Zorgt dat de gesprekkenlijst in de zijbalk er is. Gemini klapt die dicht
    * (of verbergt hem op smalle vensters); dan vindt harvestConversations nul
    * anchors en zou de bulk meteen afbreken.
    */
   async function ensureSidebarOpen() {
-    if (document.querySelector(SELECTORS.sidebarLink)) return true;
+    // Niet "bestaat er een anchor" maar "is er een anchor te zien": een
+    // dichtgeklapte zijbalk laat zijn links gewoon in de DOM staan, en de oude
+    // check vond hem dan open terwijl er niets aan te klikken viel.
+    if (visibleSidebarLinks().length) return true;
     for (const sel of SELECTORS.sidebarToggle) {
       const button = document.querySelector(sel);
       if (!button) continue;
-      console.info('[Chronicle] gemini: zijbalk dicht — openen via', sel);
+      console.info('[Chronicle] gemini: zijbalk niet zichtbaar — openen via', sel, sidebarState());
       button.click();
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         await sleep(500);
-        if (document.querySelector(SELECTORS.sidebarLink)) return true;
+        if (visibleSidebarLinks().length) return true;
       }
     }
-    return Boolean(document.querySelector(SELECTORS.sidebarLink));
+    return Boolean(visibleSidebarLinks().length);
   }
 
   async function harvestConversations() {
     await ensureSidebarOpen();
     const merged = new Map();
+    const scroller = document.querySelector(SELECTORS.sidebarScroller);
+    // Onthoud per gesprek waar het in de lijst staat. De zijbalk virtualiseert:
+    // na het oogsten staat hij weer bovenaan en zijn de oudere anchors uit de
+    // DOM verdwenen. Terugspringen naar de stand waar we het gesprek zagen is
+    // de enige bewezen manier om het weer te laten renderen.
     const absorb = () => {
+      const box = scroller ? scroller.getBoundingClientRect() : null;
       for (const anchor of document.querySelectorAll(SELECTORS.sidebarLink)) {
         const id = idFromHref(anchor.getAttribute('href'));
         if (!id || merged.has(id)) continue;
         const title = (anchor.getAttribute('aria-label') || anchor.innerText || '').trim();
-        merged.set(id, { id, title: title || `(zonder titel ${id})` });
+        const offset =
+          scroller && box
+            ? Math.max(0, Math.round(anchor.getBoundingClientRect().top - box.top + scroller.scrollTop))
+            : null;
+        merged.set(id, { id, title: title || `(zonder titel ${id})`, offset });
       }
     };
     absorb();
@@ -541,7 +598,6 @@
 
     // Virtualisatie + lazy paginering: herhaald naar beneden en accumuleren
     // tot er vijf rondes geen nieuwe gesprekken meer bijkomen.
-    const scroller = document.querySelector(SELECTORS.sidebarScroller);
     if (scroller) {
       let stable = 0;
       let lastSize = -1;
@@ -561,41 +617,89 @@
     }
     return Array.from(merged.values());
   }
-  /** Scrollt de zijbalk stapsgewijs langs en geeft de anchor terug (of null). */
-  async function scrollSidebarTo(sel) {
-    const found = document.querySelector(sel);
-    if (found) return found;
-    const scroller = document.querySelector(SELECTORS.sidebarScroller);
-    if (!scroller) return null;
-    scroller.scrollTop = 0;
-    await sleep(200);
-    for (let i = 0; i < 100; i++) {
-      const anchor = document.querySelector(sel);
-      if (anchor) return anchor;
-      const prev = scroller.scrollTop;
-      scroller.scrollTop = Math.min(scroller.scrollTop + scroller.clientHeight * 0.8, scroller.scrollHeight);
-      await sleep(200);
-      if (scroller.scrollTop === prev) break;
+  /** Eerst een scrollbare voorouder als `infinite-scroller` zelf niet scrolt. */
+  function scrollableAncestor(el) {
+    let node = el && el.parentElement;
+    while (node && node !== document.documentElement) {
+      const style = getComputedStyle(node);
+      if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 4) {
+        return node;
+      }
+      node = node.parentElement;
     }
-    return document.querySelector(sel);
+    return null;
   }
 
-  async function scrollToFindAnchor(id) {
-    const sel = `a[href="/app/${id}"]`;
-    const anchor = await scrollSidebarTo(sel);
-    if (anchor) return anchor;
-    // Klapte de zijbalk tijdens de rit dicht, dan is niet alleen dit gesprek
-    // onvindbaar maar elk volgend gesprek ook. Eén keer opnieuw openen.
-    if (await ensureSidebarOpen()) {
-      const retry = await scrollSidebarTo(sel);
-      if (retry) return retry;
+  function sidebarScroller() {
+    const base = document.querySelector(SELECTORS.sidebarScroller);
+    if (base && base.clientHeight > 0 && base.scrollHeight > base.clientHeight + 4) return base;
+    return scrollableAncestor(base) || base || scrollableAncestor(findAnchor(conversationIdFromUrl()));
+  }
+
+  /**
+   * Brengt de anchor van een gesprek terug in de DOM. Eerst door naar de stand
+   * te springen waarop de oogst het gesprek zag (dat is de bewezen route —
+   * dezelfde sprong als in `harvestConversations`), pas daarna met een sweep
+   * van boven naar beneden. De sweep stopt niet meteen als `scrollTop` niet
+   * verspringt: bij lazy paginering gebeurt dat vaker, en dan zou een gezond
+   * gesprek onterecht sneuvelen.
+   */
+  async function scrollSidebarTo(conv) {
+    const id = typeof conv === 'string' ? conv : conv.id;
+    const direct = findAnchor(id);
+    if (direct) return direct;
+    const scroller = sidebarScroller();
+    if (!scroller) return null;
+
+    const offset = conv && typeof conv === 'object' ? conv.offset : null;
+    if (typeof offset === 'number' && offset > 0 && scroller.scrollHeight > scroller.clientHeight + 4) {
+      scroller.scrollTop = Math.max(0, offset - Math.round(scroller.clientHeight / 3));
+      await sleep(500);
+      const restored = findAnchor(id);
+      if (restored) return restored;
     }
-    console.info('[Chronicle] gemini bulk: anchor niet gevonden in de zijbalk:', id);
+
+    scroller.scrollTop = 0;
+    await sleep(150);
+    const step = Math.max(180, Math.round(scroller.clientHeight * 0.8));
+    let stagnant = 0;
+    let lastHeight = scroller.scrollHeight;
+    for (let i = 0; i < 60 && stagnant < 3; i++) {
+      const anchor = findAnchor(id);
+      if (anchor) return anchor;
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        // Onderaan haakt Gemini de volgende pagina aan; even wachten en kijken
+        // of de lijst groeide. Groeit er niets, dan staat dit gesprek er niet
+        // (meer) in en is stoppen eerlijker dan eindeloos doorzoeken.
+        await sleep(500);
+        const late = findAnchor(id);
+        if (late) return late;
+        if (scroller.scrollHeight === lastHeight) stagnant += 1;
+        lastHeight = scroller.scrollHeight;
+      }
+      scroller.scrollTop = Math.min(scroller.scrollTop + step, scroller.scrollHeight);
+      await sleep(150);
+    }
+    return findAnchor(id);
+  }
+
+  async function scrollToFindAnchor(conv) {
+    const id = typeof conv === 'string' ? conv : conv.id;
+    let anchor = await scrollSidebarTo(conv);
+    if (anchor) return anchor;
+    // Eén herkansing: staat de zijbalk dichtgeklapt (links wel in de DOM, niet
+    // zichtbaar), open hem dan en zoek opnieuw.
+    if (await ensureSidebarOpen()) {
+      await sleep(400);
+      anchor = await scrollSidebarTo(conv);
+      if (anchor) return anchor;
+    }
+    console.info('[Chronicle] gemini bulk: anchor niet gevonden in de zijbalk:', id, sidebarState());
     return null;
   }
 
   async function navigateTo(conv) {
-    const anchor = await scrollToFindAnchor(conv.id);
+    const anchor = await scrollToFindAnchor(conv);
     if (!anchor) return false;
     anchor.click();
     await sleep(400);
@@ -653,6 +757,8 @@
     // beurten-signatuur (aantal + tekensamenstelling) betekent vrijwel altijd
     // dat het oude gesprek nog op het scherm stond — dan skippen en wachten.
     let prevSig = '';
+    let misses = 0;
+    let aborted = null;
     for (let i = 0; i < list.length; i++) {
       const conv = list[i];
       const label = (conv.title || '(zonder titel)').slice(0, 40);
@@ -670,8 +776,22 @@
       if (!loaded) {
         console.info('[Chronicle] gemini bulk: overgeslagen (niet geladen):', label);
         skipped.push({ title: conv.title, reason: 'niet geladen' });
+        misses += 1;
+        // Drie keer achter elkaar geen anchor: dan is de zijbalk weg en gaat
+        // elk volgend gesprek ook mis. Stoppen en melden is eerlijker dan de
+        // gebruiker naar een teller laten kijken die alleen maar skipt.
+        if (misses >= 3) {
+          const rest = list.slice(i + 1);
+          aborted = `zijbalk niet meer bereikbaar — ${rest.length} gesprekken niet geprobeerd`;
+          console.info('[Chronicle] gemini bulk: gestopt —', aborted, sidebarState());
+          for (const item of rest) {
+            skipped.push({ title: item.title, reason: 'niet geprobeerd (zijbalk weg)' });
+          }
+          break;
+        }
         continue;
       }
+      misses = 0;
       const diag = {};
       const result = await collectConversation({
         maxMs: BULK_MAX_MS,
@@ -729,7 +849,7 @@
         skipped.map((s) => `${s.title} (${s.reason})`).join(' | ')
       );
     }
-    return { conversations: out, skipped };
+    return { conversations: out, skipped, aborted };
   }
 
   // Lever meteen door tijdens het ophalen, in plaats van alles aan het eind in
@@ -764,7 +884,7 @@
       // duplicaten leverde. Tijdens de bulk staat hij uit.
       bulkActive = true;
       armed = false;
-      const { conversations, skipped } = await collectBulkConversations(
+      const { conversations, skipped, aborted } = await collectBulkConversations(
         filter,
         (i, total, name, phase) => {
           bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 24) : ''}${phase ? ' • ' + phase : ''}`;
@@ -776,9 +896,11 @@
       );
       await flush();
       if (!conversations.length) {
-        bulkButton.textContent = skipped.length
-          ? `✗ niets opgehaald (${skipped.length} overgeslagen)`
-          : '✗ geen gesprekken gevonden';
+        bulkButton.textContent = aborted
+          ? `✗ gestopt — ${aborted}`
+          : skipped.length
+            ? `✗ niets opgehaald (${skipped.length} overgeslagen)`
+            : '✗ geen gesprekken gevonden';
         bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
         setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
         return;
@@ -790,6 +912,11 @@
       if (skipped.length) {
         bulkButton.textContent += ` • ${skipped.length} overgeslagen`;
         bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
+      }
+      // De zijbalk ging tijdens de rit weg: dan is "klaar" een leugen. Zeg het
+      // en laat de titel zien waaróm de rest ontbreekt.
+      if (aborted) {
+        bulkButton.textContent = `⇊ gestopt • nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates} • ${aborted}`;
       }
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 10000);
     } catch (err) {
