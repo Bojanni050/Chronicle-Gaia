@@ -787,8 +787,18 @@
         // gebruiker naar een teller laten kijken die alleen maar skipt.
         if (misses >= 3) {
           const rest = list.slice(i + 1);
-          aborted = `zijbalk niet meer bereikbaar — ${rest.length} gesprekken niet geprobeerd`;
-          console.info('[Chronicle] gemini bulk: gestopt —', aborted, sidebarState());
+          aborted = {
+            reason: 'zijbalk niet meer bereikbaar',
+            resumeAt: i + 2,
+            rest: rest.length,
+          };
+          console.info(
+            '[Chronicle] gemini bulk: gestopt —',
+            aborted.reason,
+            '— hervat bij #' + aborted.resumeAt,
+            '(' + rest.length + ' gesprekken niet geprobeerd)',
+            sidebarState()
+          );
           for (const item of rest) {
             skipped.push({ title: item.title, reason: 'niet geprobeerd (zijbalk weg)' });
           }
@@ -902,7 +912,7 @@
       await flush();
       if (!conversations.length) {
         bulkButton.textContent = aborted
-          ? `✗ gestopt — ${aborted}`
+          ? `✗ gestopt — ${aborted.reason} (hervat bij #${aborted.resumeAt})`
           : skipped.length
             ? `✗ niets opgehaald (${skipped.length} overgeslagen)`
             : '✗ geen gesprekken gevonden';
@@ -918,10 +928,15 @@
         bulkButton.textContent += ` • ${skipped.length} overgeslagen`;
         bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
       }
-      // De zijbalk ging tijdens de rit weg: dan is "klaar" een leugen. Zeg het
-      // en laat de titel zien waaróm de rest ontbreekt.
+      // De zijbalk ging tijdens de rit weg: dan is "klaar" een leugen. Zeg waar
+      // het stopte én met welk nummer je verdergaat, want daar is het
+      // "vanaf gesprek #"-veld voor.
       if (aborted) {
-        bulkButton.textContent = `⇊ gestopt • nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates} • ${aborted}`;
+        bulkButton.textContent = `⇊ gestopt • nieuw ${totals.created} • bijgewerkt ${totals.updated} • bekend ${totals.duplicates} • hervat bij #${aborted.resumeAt}`;
+        bulkButton.title =
+          `${aborted.reason} — ${aborted.rest} gesprekken niet geprobeerd.\n` +
+          `Zet "Vanaf gesprek #" op ${aborted.resumeAt} om te hervatten.` +
+          (skipped.length ? '\n' + skipped.map((s) => `${s.title}: ${s.reason}`).join('\n') : '');
       }
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 10000);
     } catch (err) {

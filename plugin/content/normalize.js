@@ -465,7 +465,7 @@
   // Filteren vóór er één detailverzoek de deur uit gaat: honderden gesprekken
   // ophalen om er twintig te bewaren is minuten werk voor niets.
   const BULK_FILTER_KEY = 'bulkFilter';
-  const EMPTY_BULK_FILTER = { since: '', archive: 'skip', lastN: 0 };
+  const EMPTY_BULK_FILTER = { since: '', archive: 'skip', lastN: 0, fromN: 0 };
   let bulkFilter = Object.assign({}, EMPTY_BULK_FILTER);
 
   function loadBulkFilter(cb) {
@@ -501,9 +501,9 @@
   /**
    * Filtert de gesprekkenlijst. `hasDates`/`hasArchive` komen van de provider:
    * de Gemini-zijbalk heeft geen van beide, en dan zou filteren alles
-   * weggooien. `lastN` werkt overal — elke lijst komt in actualiteitsvolgorde
-   * (ChatGPT `order=updated`, Claude gesorteerd op updated_at, Gemini
-   * zijbalk nieuwste eerst).
+   * weggooien. `lastN` en `fromN` werken overal — elke lijst komt in
+   * actualiteitsvolgorde (ChatGPT `order=updated`, Claude gesorteerd op
+   * updated_at, Gemini zijbalk nieuwste eerst).
    */
   function applyBulkFilter(list, filter, capabilities = {}) {
     if (!filter || !Array.isArray(list)) return list;
@@ -545,6 +545,10 @@
       // Nieuwste eerst: "laatste N" moet ook echt de laatste N zijn.
       out = out.slice().sort((a, b) => bulkTimestamp(b) - bulkTimestamp(a));
     }
+    // "Vanaf gesprek N" is 1-gebaseerd en index-gebaseerd: het werkt dus ook
+    // voor de Gemini-zijbalk, die geen datums heeft. Handig om een run te
+    // hervatten na een afgebroken rit — de eerste N zijn dan al binnen.
+    if (Number(filter.fromN) > 1) out = out.slice(Math.min(Number(filter.fromN) - 1, out.length));
     if (filter.lastN > 0) out = out.slice(0, filter.lastN);
     return out;
   }
@@ -624,6 +628,17 @@
     lastN.placeholder = 'alles';
     Object.assign(lastN.style, FILTER_INPUT_STYLE);
 
+    // Index-gebaseerd en dus overal bruikbaar — ook op de Gemini-zijbalk, die
+    // geen datums heeft. Nuttig om een afgebroken rit te hervatten: de eerste
+    // N zijn dan immers al binnen.
+    const fromN = document.createElement('input');
+    fromN.type = 'number';
+    fromN.min = '1';
+    fromN.step = '1';
+    fromN.placeholder = '1';
+    fromN.title = 'Sla de eerste N-1 gesprekken over (nieuwste eerst). 16 begint bij het 16e gesprek.';
+    Object.assign(fromN.style, FILTER_INPUT_STYLE);
+
     const row = document.createElement('div');
     Object.assign(row.style, { display: 'flex', gap: '6px' });
 
@@ -657,6 +672,7 @@
       since.value = bulkFilter.since || '';
       archive.value = bulkFilter.archive || 'skip';
       lastN.value = bulkFilter.lastN ? String(bulkFilter.lastN) : '';
+      fromN.value = bulkFilter.fromN > 1 ? String(bulkFilter.fromN) : '';
     };
 
     const launch = (filter) => {
@@ -670,15 +686,17 @@
         since: supportsDate ? since.value || '' : '',
         archive: supportsArchive ? archive.value : 'all',
         lastN: Number(lastN.value) || 0,
+        fromN: Number(fromN.value) || 0,
       });
     });
 
     everything.addEventListener('click', () => {
-      launch({ since: '', archive: 'all', lastN: 0 });
+      launch({ since: '', archive: 'all', lastN: 0, fromN: 0 });
     });
 
     if (supportsDate) panel.appendChild(filterField('Vanaf datum', since));
     if (supportsArchive) panel.appendChild(filterField('Archief', archive));
+    panel.appendChild(filterField('Vanaf gesprek #', fromN));
     panel.appendChild(filterField('Laatste N gesprekken', lastN));
     panel.appendChild(row);
     row.append(start, everything);
