@@ -617,23 +617,28 @@
     }
     return Array.from(merged.values());
   }
-  /** Eerst een scrollbare voorouder als `infinite-scroller` zelf niet scrolt. */
-  function scrollableAncestor(el) {
-    let node = el && el.parentElement;
-    while (node && node !== document.documentElement) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 4) {
-        return node;
-      }
-      node = node.parentElement;
-    }
-    return null;
+  function isScrollable(node) {
+    return Boolean(node) && node.clientHeight > 0 && node.scrollHeight > node.clientHeight + 4;
   }
 
+  /**
+   * Het element dat de gesprekkenlijst echt scrolt. `infinite-scroller` is dat
+   * meestal, maar na een navigatie kan de eigenlijke scroll-container een
+   * wrapper (omhoog) of een element bínnen het custom element (omlaag) zijn.
+   */
   function sidebarScroller() {
     const base = document.querySelector(SELECTORS.sidebarScroller);
-    if (base && base.clientHeight > 0 && base.scrollHeight > base.clientHeight + 4) return base;
-    return scrollableAncestor(base) || base || scrollableAncestor(findAnchor(conversationIdFromUrl()));
+    if (isScrollable(base)) return base;
+    const anchor = document.querySelector(SELECTORS.sidebarLink);
+    for (let node = anchor && anchor.parentElement; node && node !== document.documentElement; node = node.parentElement) {
+      if (isScrollable(node) && /(auto|scroll|overlay)/.test(getComputedStyle(node).overflowY)) return node;
+    }
+    if (base) {
+      for (const node of base.querySelectorAll('*')) {
+        if (isScrollable(node)) return node;
+      }
+    }
+    return null;
   }
 
   /**
@@ -687,9 +692,9 @@
     const id = typeof conv === 'string' ? conv : conv.id;
     let anchor = await scrollSidebarTo(conv);
     if (anchor) return anchor;
-    // Eén herkansing: staat de zijbalk dichtgeklapt (links wel in de DOM, niet
-    // zichtbaar), open hem dan en zoek opnieuw.
-    if (await ensureSidebarOpen()) {
+    // Eén herkansing, maar alleen als de zijbalk niet zichtbaar is: anders is
+    // het precies dezelfde sweep nog eens doen zonder dat er iets veranderde.
+    if (!visibleSidebarLinks().length && (await ensureSidebarOpen())) {
       await sleep(400);
       anchor = await scrollSidebarTo(conv);
       if (anchor) return anchor;
