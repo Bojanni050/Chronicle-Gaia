@@ -318,28 +318,120 @@
     });
   }
 
+  /**
+   * Wandelt één pagina API-respons om naar {uuid, name}. Claude's webclient
+   * heeft de lijstvorm in de loop der tijd veranderd (losse array,
+   * `chat_conversations`, `data`, `conversations`, met cursor óf offset), dus
+   * we accepteren alle vormen en normaliseren meteen naar wat de bulk nodig
+   * heeft.
+   */
+  function pageToList(body) {
+    const raw = Array.isArray(body)
+      ? body
+      : (body && (body.chat_conversations || body.data || body.conversations)) || [];
+    const list = [];
+    for (const conv of raw) {
+      const uuid = conv && (conv.uuid || conv.id);
+      if (!uuid) continue;
+      const name = (conv.name || conv.title || '').trim();
+      list.push({ uuid, name });
+    }
+    return list;
+  }
+
+  async function fetchConversationPage(url) {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  /** Wandelt cursor- of offset-paginering af tot de lijst leeg blijft. */
+  async function collectFromEndpoint(base) {
+    const sep = base.includes('?') ? '&' : '?';
+    const out = [];
+    const seen = new Set();
+    let cursor = null;
+    let offset = 0;
+    for (let page = 0; page < 60; page++) {
+      const url = cursor
+        ? `${base}${sep}cursor=${encodeURIComponent(cursor)}`
+        : offset
+          ? `${base}${sep}offset=${offset}`
+          : base;
+      const body = await fetchConversationPage(url);
+      const list = pageToList(body);
+      let added = 0;
+      for (const conv of list) {
+        if (seen.has(conv.uuid)) continue;
+        seen.add(conv.uuid);
+        out.push(conv);
+        added += 1;
+      }
+      if (!list.length || !added) break;
+      const nextCursor = !Array.isArray(body) && typeof body.cursor === 'string' ? body.cursor : null;
+      if (nextCursor) {
+        cursor = nextCursor;
+        continue;
+      }
+      if (list.length < 100) break;
+      offset += list.length;
+    }
+    return out;
+  }
+
+  /**
+   * Laatste redmiddel: de gesprekken die in de zijbalk staan. De lijst is dan
+   * alleen wat er gepagineerd geladen is (niet alles), maar "een paar" is
+   * beter dan "geen" — en de melding zegt het eerlijk.
+   */
+  function conversationsFromSidebar() {
+    const out = [];
+    const seen = new Set();
+    for (const link of document.querySelectorAll('a[href*="/chat/"]')) {
+      const match = (link.getAttribute('href') || '').match(/\/chat\/([0-9a-f-]{36})/i);
+      if (!match || seen.has(match[1])) continue;
+      seen.add(match[1]);
+      const name = (link.getAttribute('aria-label') || link.innerText || '').trim().split('\n')[0];
+      out.push({ uuid: match[1], name });
+    }
+    return out;
+  }
+
   async function collectAllConversations() {
     const org = await resolveOrgId();
-    if (!org) return [];
-    const conversations = [];
-    let cursor = null;
-    // De gesprekkenlijst is gepagineerd; wandel alle pagina's af.
-    do {
-      const url = `/api/organizations/${org}/chat_conversations?limit=100${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`;
-      const res = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      if (!res.ok) throw new Error(`claude conversations API ${res.status}`);
-      const body = await res.json();
-      for (const conv of body.chat_conversations || []) conversations.push(conv);
-      cursor = body.cursor || null;
-    } while (cursor);
-    return conversations;
+    if (!org) {
+      console.info('[Chronicle] claude bulk: geen org-id gevonden (localStorage én /api/organizations)');
+      return { list: [], source: null, reason: 'geen org-id gevonden (localStorage + /api/organizations)' };
+    }
+    // De webclient gebruikt niet in elke versie hetzelfde pad.
+    const endpoints = [
+      `/api/organizations/${org}/chat_conversations_v2?limit=100`,
+      `/api/organizations/${org}/chat_conversations?limit=100`,
+    ];
+    for (const base of endpoints) {
+      try {
+        const list = await collectFromEndpoint(base);
+        console.info('[Chronicle] claude bulk: lijst via', base.split('?')[0], '—', list.length, 'gesprekken');
+        if (list.length) return { list, source: 'api' };
+      } catch (err) {
+        console.info('[Chronicle] claude bulk:', base.split('?')[0], 'mislukt:', String(err && err.message ? err.message : err));
+      }
+    }
+    const fromDom = conversationsFromSidebar();
+    console.info('[Chronicle] claude bulk: DOM-zijbalk gaf', fromDom.length, 'gesprekken');
+    return { list: fromDom, source: fromDom.length ? 'sidebar' : null, reason: fromDom.length ? null : 'lijst-API faalde en de zijbalk gaf geen links' };
   }
 
   async function collectBulkConversations(onProgress) {
-    const list = await collectAllConversations();
+    const { list, source, reason } = await collectAllConversations();
     const org = await resolveOrgId();
     const out = [];
     let i = 0;
+    let failed = 0;
     // In batches van 3 met 200ms pauze — het patroon van
     // agoramachina/claude-exporter: klein genoeg om de API niet te
     // overbelasten (429's), snel genoeg om niet eeuwig te duren.
@@ -361,8 +453,19 @@
             occurredAt: toEpochMs(conv.updated_at || conv.created_at),
             attachments: parsed.attachments,
           });
-        } catch {
-          return null; // één onbereikbaar gesprek mag de bulk niet breken
+        } catch (err) {
+          // Eén onbereikbaar gesprek mag de bulk niet breken, maar stil
+          // verdwijnen is erger: de eerste paar fouten gaan naar de console,
+          // anders zie je alleen "geen gesprekken gevonden" zonder oorzaak.
+          failed += 1;
+          if (failed <= 3) {
+            console.info(
+              '[Chronicle] claude bulk: gesprek mislukt',
+              conv.uuid,
+              String(err && err.message ? err.message : err)
+            );
+          }
+          return null;
         }
       }));
       for (const conv of results) {
@@ -374,22 +477,38 @@
         await new Promise((r) => setTimeout(r, 200));
       }
     }
-    return out;
+    return { conversations: out, failed, total: list.length, source, reason: reason || null };
   }
 
   const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
     const ui = window.__chronicleUI;
     try {
       bulkButton.textContent = '⇊ lijst ophalen…';
-      const conversations = await collectBulkConversations((i, total, name) => {
-        bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}`;
+      const { conversations, failed, total, source, reason } = await collectBulkConversations((i, count, name) => {
+        bulkButton.textContent = `⇊ ophalen ${i}/${count}${name && name !== '—' ? ' • ' + name.slice(0, 30) : ''}`;
       });
       if (!conversations.length) {
-        bulkButton.textContent = '✗ geen gesprekken gevonden';
-        setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 4000);
+        // Onderscheid maken tussen "lijst onvindbaar" en "lijst gevonden maar
+        // niets leesbaar": dat scheelt de volgende keer zoeken in het donker.
+        if (!total) {
+          bulkButton.textContent = '✗ geen gesprekken gevonden — zie console';
+          bulkButton.title = reason || 'Open de linkerzijbalk en probeer opnieuw.';
+        } else {
+          bulkButton.textContent = `✗ ${total} gevonden, 0 leesbaar — zie console`;
+          bulkButton.title = 'De lijst werkte, maar elk gesprek ophalen mislukte (API-fout of gewijzigde route).';
+        }
+        setTimeout(() => {
+          bulkButton.textContent = '⇊ Alles naar Chronicle';
+          bulkButton.title = '';
+        }, 8000);
         return;
       }
+      console.info('[Chronicle] claude bulk:', conversations.length, 'van', total, 'gesprekken via', source);
       await ui.exportManyToChronicle(bulkButton, conversations);
+      if (failed) {
+        bulkButton.textContent += ` • ${failed} overgeslagen`;
+        bulkButton.title = `${failed} gesprek(ken) konden niet worden opgehaald — zie console`;
+      }
     } catch (err) {
       bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
