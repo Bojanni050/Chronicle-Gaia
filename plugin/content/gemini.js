@@ -469,10 +469,17 @@
   async function collectConversation(options = {}) {
     const id = conversationIdFromUrl();
     const { turns, attachments, timedOut, elapsedMs } = await collectRendered(options);
-    if (!turns.length) {
-      return { error: 'geen berichten gevonden op deze pagina', timedOut };
+    // Diagnose gaat via een apart object, nooit via het gesprek zelf: alles wat
+    // op het gesprek staat reist mee naar de ingest-API, en die weigert
+    // onbekende velden ("unknown field 'timedOut'").
+    if (options.diagnostics) {
+      options.diagnostics.timedOut = Boolean(timedOut);
+      options.diagnostics.elapsedMs = elapsedMs;
     }
-    const conv = buildConversation({
+    if (!turns.length) {
+      return { error: 'geen berichten gevonden op deze pagina' };
+    }
+    return buildConversation({
       content: transcriptFromTurns(turns, attachments),
       turns,
       title: titleFromSidebar(id),
@@ -480,10 +487,6 @@
       sourceProvider: 'gemini',
       attachments,
     });
-    // Diagnose voor de bulk: is de reveal-pass afgebroken op het budget?
-    conv.timedOut = Boolean(timedOut);
-    conv.elapsedMs = elapsedMs;
-    return conv;
   }
 
   // ── Bulk ─────────────────────────────────────────────────────────────────
@@ -665,8 +668,10 @@
         skipped.push({ title: conv.title, reason: 'niet geladen' });
         continue;
       }
+      const diag = {};
       const result = await collectConversation({
         maxMs: BULK_MAX_MS,
+        diagnostics: diag,
         onStep: (step) => onProgress && onProgress(i + 1, list.length, conv.title, 'scrollen ' + step),
       });
       if (result.error) {
@@ -674,7 +679,7 @@
         skipped.push({ title: conv.title, reason: result.error });
         continue;
       }
-      if (result.timedOut) {
+      if (diag.timedOut) {
         console.info(
           '[Chronicle] gemini bulk: overgeslagen (reveal-budget na',
           Math.round((Date.now() - t0) / 1000),
@@ -704,9 +709,7 @@
         ((Date.now() - t0) / 1000).toFixed(1),
         's )'
       );
-      // Diagnosevelden horen niet in de payload.
-      delete result.timedOut;
-      delete result.elapsedMs;
+      // Diagnosevelden staan bewust niet op het gesprek (zie collectConversation).
       if (!result.title) result.title = conv.title;
       out.push(result);
       if (onCollected) await onCollected(result);

@@ -173,7 +173,7 @@
     setButtonState(button, 'busy');
     let response;
     try {
-      response = await chrome.runtime.sendMessage({ type: 'chronicle-export', conversation });
+      response = await chrome.runtime.sendMessage({ type: 'chronicle-export', conversation: toPayload(conversation) });
     } catch (err) {
       button.textContent = '✗ ' + String(err).slice(0, 60);
       button.title = String(err);
@@ -444,6 +444,41 @@
   const EMPTY_REPORT = { total: 0, created: 0, updated: 0, duplicates: 0, failed: 0, queued: 0, gaps: 0 };
 
   /**
+   * Precies de velden die de ingest-API kent (zie buildConversation). Zet een
+   * provider daarna nog iets op het gesprek — een diagnoseveld bijvoorbeeld —
+   * dan klapte de hele levering op "unknown field 'x'". Hier wordt dat alsnog
+   * weggefilterd, zodat één vergeetpunt niet de export sloopt.
+   */
+  // Spiegel van ALLOWED_KEYS in service-worker.js.
+  const CONVERSATION_FIELDS = [
+    'content',
+    'turns',
+    'title',
+    'url',
+    'sourceProvider',
+    'occurredAt',
+    'createdAt',
+    'attachments',
+    'attachmentGaps',
+  ];
+
+  function toPayload(conversation) {
+    if (!conversation || typeof conversation !== 'object') return conversation;
+    const payload = {};
+    const dropped = [];
+    for (const key of CONVERSATION_FIELDS) {
+      if (conversation[key] !== undefined) payload[key] = conversation[key];
+    }
+    for (const key of Object.keys(conversation)) {
+      if (!CONVERSATION_FIELDS.includes(key)) dropped.push(key);
+    }
+    if (dropped.length) {
+      console.info('[Chronicle] payload: onbekende velden weggelaten:', dropped.join(', '));
+    }
+    return payload;
+  }
+
+  /**
    * Levert een reeks gesprekken in brokken van 15 (sendMessage heeft een
    * berichtlimiet, en met thinking-blokken is één gesprek al flink groot) en
    * telt de rapporten op. `onChunk(optelling, chunkSize, done)` vuurt na elke
@@ -458,7 +493,7 @@
       const chunk = conversations.slice(i, i + CHUNK);
       const response = await chrome.runtime.sendMessage({
         type: 'chronicle-export-many',
-        conversations: chunk,
+        conversations: chunk.map(toPayload),
       });
       if (!response || !response.ok) {
         throw new Error(response?.error || 'onbekende fout');
