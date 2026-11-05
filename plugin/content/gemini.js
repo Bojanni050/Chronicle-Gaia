@@ -130,19 +130,27 @@
   async function blobBytes(src) {
     // Blokgewijze base64; één String.fromCharCode.apply op een paar MB blaast
     // de stack op — zelfde les als bij chatgpt.js.
-    const response = await fetch(src);
-    if (!response.ok) throw new Error(`blob ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    let binary = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    // Een blob die nooit resolvet (diep-onderzoek-artifacts) mag een bulkexport
+    // niet laten hangen: harde bovengrens per blob.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(src, { signal: controller.signal });
+      if (!response.ok) throw new Error(`blob ${response.status}`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      return {
+        base64: btoa(binary),
+        mimeType: response.headers.get('content-type') || 'image/png',
+        size: bytes.length,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    return {
-      base64: btoa(binary),
-      mimeType: response.headers.get('content-type') || 'image/png',
-      size: bytes.length,
-    };
   }
 
   /** De alt is bij geüploade afbeeldingen de generieke placeholder, geen naam. */
@@ -194,7 +202,11 @@
    * na het scrollen is de verzamelde state compleet, wat de DOM daarna ook
    * weer dreigt te wissen.
    */
-  async function collectRendered() {
+  async function collectRendered(options = {}) {
+    const startedAt = Date.now();
+    const deadline = options.maxMs ? startedAt + options.maxMs : 0;
+    let timedOut = false;
+    let steps = 0;
     // Per container-element een record: buiten de viewport gewiste tekst ×
     // virtualisatie verliezen we niet, want we blijven de bestgeziene waarden
     // vasthouden. Bijlagen dedupliceren we per verwijzing (blob-url/CDN-url).
@@ -294,6 +306,20 @@
         let stable = 0;
         let prevFilled = -1;
         for (let i = 0; i < 300; i++) {
+          // Diep-onderzoek-artifacts blijven lazy laden: de tijdlijn groeit
+          // sneller dan we scrollen en de stabiliteitswacht komt nooit los.
+          // Zonder budget liep de bulkexport daar minutenlang vast.
+          if (deadline && Date.now() > deadline) {
+            timedOut = true;
+            console.info(
+              '[Chronicle] gemini reveal-pass afgebroken na',
+              Math.round((Date.now() - startedAt) / 1000),
+              's — gesprek te zwaar/lang'
+            );
+            break;
+          }
+          steps = i + 1;
+          if (options.onStep) options.onStep(steps, 300);
           const prev = scroller.scrollTop;
           scroller.scrollTop = Math.min(
             prev + Math.max(Math.round(scroller.clientHeight * 0.7), 200),
@@ -427,16 +453,16 @@
         .map((a) => `${a.filename || '?'} → na beurt ${a.afterTurn ?? '?'}`)
         .join(' | ')
     );
-    return { turns, attachments };
+    return { turns, attachments, timedOut, elapsedMs: Date.now() - startedAt, steps };
   }
 
-  async function collectConversation() {
+  async function collectConversation(options = {}) {
     const id = conversationIdFromUrl();
-    const { turns, attachments } = await collectRendered();
+    const { turns, attachments, timedOut, elapsedMs } = await collectRendered(options);
     if (!turns.length) {
-      return { error: 'geen berichten gevonden op deze pagina' };
+      return { error: 'geen berichten gevonden op deze pagina', timedOut };
     }
-    return buildConversation({
+    const conv = buildConversation({
       content: transcriptFromTurns(turns, attachments),
       turns,
       title: titleFromSidebar(id),
@@ -444,6 +470,10 @@
       sourceProvider: 'gemini',
       attachments,
     });
+    // Diagnose voor de bulk: is de reveal-pass afgebroken op het budget?
+    conv.timedOut = Boolean(timedOut);
+    conv.elapsedMs = elapsedMs;
+    return conv;
   }
 
   // ── Bulk ─────────────────────────────────────────────────────────────────
@@ -505,7 +535,7 @@
     if (!scroller) return null;
     scroller.scrollTop = 0;
     await sleep(200);
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 100; i++) {
       anchor = document.querySelector(sel);
       if (anchor) return anchor;
       const prev = scroller.scrollTop;
@@ -513,6 +543,7 @@
       await sleep(200);
       if (scroller.scrollTop === prev) break;
     }
+    if (!anchor) console.info('[Chronicle] gemini bulk: anchor niet gevonden in de zijbalk:', id);
     return document.querySelector(sel);
   }
 
@@ -553,12 +584,19 @@
     return conversationIdFromUrl() === targetId && turnsFromDom().length > 0;
   }
 
+  // Diep-onderzoek-artifacts (lazy ladende rapporten) laten de reveal-pass
+  // eindeloos door-scrollen. In de bulk krijgt elk gesprek daarom een hard
+  // budget: liever dat ene gesprek overslaan en melden dan de hele export
+  // laten hangen. Handmatig exporteren heeft geen budget — daar wacht je zelf.
+  const BULK_MAX_MS = 30000;
+
   async function collectBulkConversations(onProgress) {
     const list = await harvestConversations();
     if (!list.length) {
       throw new Error('geen gesprekken in de zijbalk — open de linkerzijbalk');
     }
     const out = [];
+    const skipped = [];
     // Stale-body-guard: het SPA-vraagstuk is dat de DOM nog even het vorige
     // gesprek toont nadat de URL al wisselde. Een volledig gelijk
     // beurten-signatuur (aantal + tekensamenstelling) betekent vrijwel altijd
@@ -566,10 +604,36 @@
     let prevSig = '';
     for (let i = 0; i < list.length; i++) {
       const conv = list[i];
-      onProgress && onProgress(i + 1, list.length, conv.title);
+      const label = (conv.title || '(zonder titel)').slice(0, 40);
+      const t0 = Date.now();
+      onProgress && onProgress(i + 1, list.length, conv.title, 'laden');
       const navigated = await navigateTo(conv);
-      if (!navigated || !(await waitForConversation(conv.id))) continue;
-      const { turns, attachments } = await collectRendered();
+      if (!navigated || !(await waitForConversation(conv.id))) {
+        console.info('[Chronicle] gemini bulk: overgeslagen (niet geladen):', label);
+        skipped.push({ title: conv.title, reason: 'niet geladen' });
+        continue;
+      }
+      const result = await collectConversation({
+        maxMs: BULK_MAX_MS,
+        onStep: (step) => onProgress && onProgress(i + 1, list.length, conv.title, 'scrollen ' + step),
+      });
+      if (result.error) {
+        console.info('[Chronicle] gemini bulk: overgeslagen (', result.error, '):', label);
+        skipped.push({ title: conv.title, reason: result.error });
+        continue;
+      }
+      if (result.timedOut) {
+        console.info(
+          '[Chronicle] gemini bulk: overgeslagen (reveal-budget na',
+          Math.round((Date.now() - t0) / 1000),
+          's — artifact?):',
+          label
+        );
+        skipped.push({ title: conv.title, reason: 'te zwaar/lang (artifact?)' });
+        continue;
+      }
+      const turns = result.turns || [];
+      const attachments = result.attachments || [];
       if (!turns.length) continue;
       const sig = turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
       if (prevSig && sig === prevSig) {
@@ -579,39 +643,56 @@
       prevSig = sig;
       console.info(
         '[Chronicle] gemini bulk:',
-        (conv.title || '(zonder titel)').slice(0, 40),
+        label,
         '→',
         turns.length,
         'beurten,',
         attachments.length,
-        'bijlagen'
+        'bijlagen (',
+        ((Date.now() - t0) / 1000).toFixed(1),
+        's )'
       );
-      out.push(buildConversation({
-        content: transcriptFromTurns(turns, attachments),
-        turns,
-        title: conv.title,
-        url: `https://gemini.google.com/app/${conv.id}`,
-        sourceProvider: 'gemini',
-        attachments,
-      }));
+      // Diagnosevelden horen niet in de payload.
+      delete result.timedOut;
+      delete result.elapsedMs;
+      if (!result.title) result.title = conv.title;
+      out.push(result);
       await sleep(200);
     }
-    return out;
+    if (skipped.length) {
+      console.info(
+        '[Chronicle] gemini bulk:',
+        out.length,
+        'van',
+        list.length,
+        'gesprekken — overgeslagen:',
+        skipped.map((s) => `${s.title} (${s.reason})`).join(' | ')
+      );
+    }
+    return { conversations: out, skipped };
   }
 
   const bulkButton = window.__chronicleUI.makeBulkButton(async () => {
     const ui = window.__chronicleUI;
     try {
       bulkButton.textContent = '⇊ lijst ophalen…';
-      const conversations = await collectBulkConversations((i, total, name) => {
-        bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}`;
+      bulkButton.title = '';
+      const { conversations, skipped } = await collectBulkConversations((i, total, name, phase) => {
+        bulkButton.textContent = `⇊ ophalen ${i}/${total}${name ? ' • ' + name.slice(0, 30) : ''}${phase ? ' • ' + phase : ''}`;
       });
       if (!conversations.length) {
-        bulkButton.textContent = '✗ geen gesprekken gevonden';
-        setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 4000);
+        bulkButton.textContent = skipped.length
+          ? `✗ niets opgehaald (${skipped.length} overgeslagen)`
+          : '✗ geen gesprekken gevonden';
+        bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
+        setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
         return;
       }
       await ui.exportManyToChronicle(bulkButton, conversations);
+      if (skipped.length) {
+        bulkButton.textContent += ` • ${skipped.length} overgeslagen`;
+        bulkButton.title = skipped.map((s) => `${s.title}: ${s.reason}`).join('\n');
+      }
     } catch (err) {
       bulkButton.textContent = '✗ ' + String(err && err.message ? err.message : err).slice(0, 60);
       setTimeout(() => (bulkButton.textContent = '⇊ Alles naar Chronicle'), 6000);
