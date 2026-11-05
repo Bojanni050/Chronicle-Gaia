@@ -116,7 +116,10 @@ function parseExportFile(filePath) {
   return [];
 }
 
-async function deliver(conversation) {
+async function deliver(parsed) {
+  // De parsers leveren ook `summary` (alleen voor de app-UI); de listener weigert
+  // onbekende velden met 422, dus alleen de ingest-velden doorsturen.
+  const { summary, ...conversation } = parsed;
   const response = await fetch(`${INGEST_URL}/ingest/chat`, {
     method: 'POST',
     headers: {
@@ -170,7 +173,9 @@ async function processFile(file) {
   console.log(
     `[watch-exports] ${path.basename(file)}: nieuw ${created}, bijgewerkt ${updated}, actueel ${duplicates}${failed ? ', mislukt ' + failed : ''}`
   );
-  markProcessed(file);
+  // Alleen markeren als alles geleverd is; anders kan een volgende run opnieuw proberen.
+  if (failed === 0) markProcessed(file);
+  else console.error(`[watch-exports] ${path.basename(file)} NIET als verwerkt gemarkeerd (${failed} mislukt) — volgende run probeert opnieuw`);
   for (const t of targets) {
     if (t.tmp) fs.rmSync(t.tmp, { recursive: true, force: true });
   }
