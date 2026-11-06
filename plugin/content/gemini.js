@@ -784,6 +784,19 @@
    * stale-body-guard (het SPA-vraagstuk: de URL is al het nieuwe gesprek, de
    * DOM toont nog even het oude).
    */
+  /**
+   * Wacht tot de doelconversatie zichtbaar is en de zichtbare beurt-staart
+   * stabiel is. De eigennaamse beurten moeten dáárna via collectRendered()
+   * uit de virtualistie-scroll komen; hier gaat het alleen om de
+   * stale-body-guard (het SPA-vraagstuk: de URL is al het nieuwe gesprek, de
+   * DOM toont nog even het oude).
+   *
+   * Geeft een uitkomst terug in plaats van alleen waar/onwaar, omdat een
+   * diep-onderzoek-gesprek nooit twee gelijke beurt-signaturen oplevert: het
+   * paneel vervangt het gesprek. Zonder deze vroege uitweg wacht de bulk 20 s
+   * voor niets en telt het gesprek als "niet geladen" — drie daarvan na elkaar
+   * stopten de hele run.
+   */
   async function waitForConversation(targetId) {
     const deadline = Date.now() + 20000;
     let lastSig = '';
@@ -791,19 +804,22 @@
     while (Date.now() < deadline) {
       await sleep(600);
       if (conversationIdFromUrl() !== targetId) continue;
+      if (isDeepResearch()) return 'deep-research';
       const turns = turnsFromDom();
       if (!turns.length) continue;
       const sig =
         turns.length + ':' + turns.reduce((n, t) => n + t.text.length, 0);
       if (sig === lastSig) {
         stableHits += 1;
-        if (stableHits >= 1) return true;
+        if (stableHits >= 1) return 'ok';
       } else {
         stableHits = 0;
         lastSig = sig;
       }
     }
-    return conversationIdFromUrl() === targetId && turnsFromDom().length > 0;
+    if (conversationIdFromUrl() !== targetId) return 'timeout';
+    if (isDeepResearch()) return 'deep-research';
+    return turnsFromDom().length > 0 ? 'ok' : 'timeout';
   }
 
   // Diep-onderzoek-artifacts (lazy ladende rapporten) laten de reveal-pass
@@ -819,12 +835,46 @@
    * staan wanneer je een afgerond onderzoek later heropent, dus het is een
    * betrouwbaarder signaal dan de titel of een icoontje in de zijbalk.
    *
-   * De check gebeurt ná `waitForConversation()`: dat wacht op twee gelijke
+   * De check gebeurt tijdens `waitForConversation()`: dat wacht op twee gelijke
    * beurten-signaturen, dus het paneel van het vórige gesprek is dan al uit de
    * DOM. Vóór de reveal-pass, want juist die pass loopt op zo'n artifact vast.
    */
   function isDeepResearch() {
     return Boolean(document.querySelector('deep-research-immersive-panel'));
+  }
+
+  /**
+   * Het diep-onderzoek-paneel is een immersieve laag over het gesprek: de
+   * zijbalk eronder is niet meer te gebruiken, dus de volgende `navigateTo`
+   * vindt geen enkele anchor (links: 0) en de run leek vast te lopen. Daarom
+   * eerst proberen te sluiten (Escape, dan een sluit-/terugknop), en pas als
+   * dat niet lukt terug naar het vorige gesprek.
+   */
+  async function leaveDeepResearch() {
+    const panel = () => document.querySelector('deep-research-immersive-panel');
+    if (!panel()) return true;
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      code: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+    });
+    document.dispatchEvent(escape);
+    window.dispatchEvent(escape);
+    await sleep(500);
+    if (!panel()) return true;
+    const close = panel().querySelector(
+      'button[aria-label*="close" i], button[aria-label*="sluit" i], button[aria-label*="back" i], button[aria-label*="terug" i]'
+    );
+    if (close) {
+      close.click();
+      await sleep(500);
+    }
+    if (!panel()) return true;
+    history.back();
+    await sleep(800);
+    return !panel();
   }
 
   async function collectBulkConversations(filter, onProgress, onCollected) {
@@ -851,21 +901,52 @@
       const t0 = Date.now();
       onProgress && onProgress(i + 1, list.length, conv.title, 'laden');
       let navigated = await navigateTo(conv);
-      let loaded = navigated && (await waitForConversation(conv.id));
-      if (!loaded) {
+      let outcome = navigated ? await waitForConversation(conv.id) : 'no-anchor';
+      if (outcome === 'no-anchor' || outcome === 'timeout') {
         // Eén herkansing: een klik die net na een re-render van de zijbalk
         // kwam doet niets, en dan zou een gezond gesprek onterecht sneuvelen.
         await sleep(600);
         navigated = await navigateTo(conv);
-        loaded = navigated && (await waitForConversation(conv.id));
+        outcome = navigated ? await waitForConversation(conv.id) : 'no-anchor';
       }
-      if (!loaded) {
+      // Diep onderzoek is geen gesprek maar een immersief rapport. Meteen
+      // overslaan — vóór de reveal-pass, die op zo'n artifact zijn hele budget
+      // verbrandt — en het paneel daarna sluiten: zolang het openstaat vindt
+      // het volgende gesprek geen enkele anchor in de zijbalk.
+      if (outcome === 'deep-research') {
+        console.info('[Chronicle] gemini bulk: overgeslagen (diep onderzoek):', label);
+        skipped.push({ title: conv.title, reason: 'diep onderzoek' });
+        if (!(await leaveDeepResearch())) {
+          console.info('[Chronicle] gemini bulk: paneel niet te sluiten:', label, sidebarState());
+          const rest = list.slice(i + 1);
+          aborted = {
+            reason: 'diep-onderzoek-paneel blijft open',
+            resumeAt: i + 2,
+            rest: rest.length,
+          };
+          for (const item of rest) {
+            skipped.push({ title: item.title, reason: 'niet geprobeerd (paneel open)' });
+          }
+          break;
+        }
+        misses = 0;
+        continue;
+      }
+      if (outcome !== 'ok') {
         console.info('[Chronicle] gemini bulk: overgeslagen (niet geladen):', label);
         skipped.push({ title: conv.title, reason: 'niet geladen' });
+        // Alleen een lege zijbalk is een reden om te stoppen. Een gesprek dat
+        // niet laadt (zwaar artifact, inmiddels verwijderd) mag de run niet
+        // beëindigen; de lijst is nog gezond, dus doorzoeken.
+        if (visibleSidebarLinks().length) {
+          misses = 0;
+          continue;
+        }
         misses += 1;
-        // Drie keer achter elkaar geen anchor: dan is de zijbalk weg en gaat
-        // elk volgend gesprek ook mis. Stoppen en melden is eerlijker dan de
-        // gebruiker naar een teller laten kijken die alleen maar skipt.
+        // Drie keer achter elkaar geen anchor én geen links: dan is de zijbalk
+        // weg en gaat elk volgend gesprek ook mis. Stoppen en melden is
+        // eerlijker dan de gebruiker naar een teller laten kijken die alleen
+        // maar skipt.
         if (misses >= 3) {
           const rest = list.slice(i + 1);
           aborted = {
@@ -888,15 +969,6 @@
         continue;
       }
       misses = 0;
-      // Diep onderzoek overslaan vóór de reveal-pass: dat artifact blijft
-      // lazy laden, dus de pass zou hier zijn hele budget (30 s) verbranden en
-      // het gesprek alsnog als "te zwaar/lang" afserveren. Overslaan is dan
-      // eerlijker én goedkoper. Handmatig exporteren blijft gewoon werken.
-      if (isDeepResearch()) {
-        console.info('[Chronicle] gemini bulk: overgeslagen (diep onderzoek):', label);
-        skipped.push({ title: conv.title, reason: 'diep onderzoek' });
-        continue;
-      }
       const diag = {};
       const result = await collectConversation({
         maxMs: BULK_MAX_MS,
