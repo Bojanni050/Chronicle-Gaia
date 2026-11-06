@@ -584,7 +584,10 @@
 
 
   // Filterformulier (gedeeld met ChatGPT/Gemini, staat in normalize.js).
-  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({ onStart: runBulk });
+  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({
+    onStart: runBulk,
+    currentId: conversationUuidFromUrl,
+  });
 
   const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 

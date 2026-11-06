@@ -139,3 +139,46 @@ describe('transcriptFromTurns met bijlagen', () => {
     expect(out).not.toContain('[Bijlage:');
   });
 });
+
+/**
+ * "Vanaf dit gesprek" filtert op id, niet op positie: de lijst schuift tussen
+ * twee runs (nieuw gesprek bovenaan) en een nummer zou dan stil het verkeerde
+ * gesprek als startpunt nemen.
+ */
+describe('applyBulkFilter vanaf dit gesprek', () => {
+  const filter = (f: any) =>
+    ((window as any).__chronicleUI.applyBulkFilter as (l: any[], f: any, c?: any) => any[])(
+      [
+        { id: 'a', title: 'een' },
+        { id: 'b', title: 'twee' },
+        { id: 'c', title: 'drie' },
+      ],
+      f,
+      { hasDates: false, hasArchive: false }
+    );
+
+  it('begint bij het opgegeven gesprek, dat zelf meedoet', () => {
+    expect(filter({ fromId: 'b' }).map((c: any) => c.id)).toEqual(['b', 'c']);
+  });
+
+  it('laat de lijst heel als het gesprek er niet in staat', () => {
+    expect(filter({ fromId: 'weg' }).map((c: any) => c.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('werkt ook met het uuid-veld van Claude', () => {
+    const list = [{ uuid: 'x' }, { uuid: 'y' }];
+    const out = (window as any).__chronicleUI.applyBulkFilter(list, { fromId: 'y' }, {
+      hasDates: false,
+      hasArchive: false,
+    });
+    expect(out.map((c: any) => c.uuid)).toEqual(['y']);
+  });
+
+  it('laat een nummer vallen zodra er een gesprek gekozen is', () => {
+    expect(filter({ fromId: 'b', fromN: 3 }).map((c: any) => c.id)).toEqual(['b', 'c']);
+  });
+
+  it('laat "laatste N" daarna nog steeds werken', () => {
+    expect(filter({ fromId: 'b', lastN: 1 }).map((c: any) => c.id)).toEqual(['b']);
+  });
+});

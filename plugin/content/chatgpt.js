@@ -637,7 +637,10 @@
   }
 
   // Filterformulier (gedeeld met Claude/Gemini, staat in normalize.js).
-  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({ onStart: runBulk });
+  const filterPanel = window.__chronicleUI.makeBulkFilterPanel({
+    onStart: runBulk,
+    currentId: conversationIdFromUrl,
+  });
   const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 
   const floatingButton = makeButton(() => {

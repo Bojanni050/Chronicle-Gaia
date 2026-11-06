@@ -1175,6 +1175,7 @@
     supportsDate: false,
     supportsArchive: false,
     onStart: runBulk,
+    currentId: conversationIdFromUrl,
   });
   const bulkButton = window.__chronicleUI.makeBulkButton(() => filterPanel.toggle());
 

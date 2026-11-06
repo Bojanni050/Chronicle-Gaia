@@ -465,7 +465,7 @@
   // Filteren vóór er één detailverzoek de deur uit gaat: honderden gesprekken
   // ophalen om er twintig te bewaren is minuten werk voor niets.
   const BULK_FILTER_KEY = 'bulkFilter';
-  const EMPTY_BULK_FILTER = { since: '', archive: 'skip', lastN: 0, fromN: 0 };
+  const EMPTY_BULK_FILTER = { since: '', archive: 'skip', lastN: 0, fromN: 0, fromId: '' };
   let bulkFilter = Object.assign({}, EMPTY_BULK_FILTER);
 
   function loadBulkFilter(cb) {
@@ -545,10 +545,29 @@
       // Nieuwste eerst: "laatste N" moet ook echt de laatste N zijn.
       out = out.slice().sort((a, b) => bulkTimestamp(b) - bulkTimestamp(a));
     }
+    // "Vanaf dit gesprek": je opent het gesprek waar je wilt beginnen en de
+    // bulk pakt dat en alles daarna. Ook op id en niet op positie, want de
+    // lijst verschuift tussen twee runs (nieuw gesprek bovenaan) en dan zou
+    // "vanaf #16" stilletjes het verkeerde gesprek worden. `uuid` is het
+    // Claude-veld, `id` dat van ChatGPT en Gemini.
+    if (filter.fromId) {
+      const idx = out.findIndex(
+        (conv) => String((conv && (conv.id || conv.uuid)) || '') === String(filter.fromId)
+      );
+      if (idx > 0) out = out.slice(idx);
+      if (idx < 0) {
+        console.info(
+          '[Chronicle] bulkfilter: "vanaf dit gesprek" staat niet in de lijst — filter overgeslagen'
+        );
+      }
+    }
     // "Vanaf gesprek N" is 1-gebaseerd en index-gebaseerd: het werkt dus ook
     // voor de Gemini-zijbalk, die geen datums heeft. Handig om een run te
     // hervatten na een afgebroken rit — de eerste N zijn dan al binnen.
-    if (Number(filter.fromN) > 1) out = out.slice(Math.min(Number(filter.fromN) - 1, out.length));
+    // Samen met `fromId` is het dubbelop; dan wint het gesprek.
+    if (!filter.fromId && Number(filter.fromN) > 1) {
+      out = out.slice(Math.min(Number(filter.fromN) - 1, out.length));
+    }
     if (filter.lastN > 0) out = out.slice(0, filter.lastN);
     return out;
   }
@@ -642,6 +661,57 @@
     const row = document.createElement('div');
     Object.assign(row.style, { display: 'flex', gap: '6px' });
 
+    /**
+     * "Vanaf dit gesprek" i.p.v. een nummer: je opent de chat waar je wilt
+     * beginnen en klikt hier. Het nummer blijft bestaan voor het hervatten van
+     * een afgebroken rit, maar dit is de route die je niet laat tellen.
+     */
+    let fromId = '';
+    const fromHere = document.createElement('button');
+    fromHere.type = 'button';
+    Object.assign(fromHere.style, {
+      width: '100%',
+      padding: '6px 10px',
+      borderRadius: '8px',
+      border: '1px solid rgba(0,0,0,0.15)',
+      background: '#fff',
+      color: '#1c1917',
+      font: '12px system-ui, sans-serif',
+      cursor: 'pointer',
+    });
+
+    const fromHereNote = document.createElement('span');
+    Object.assign(fromHereNote.style, {
+      display: 'none',
+      fontSize: '10px',
+      lineHeight: '1.3',
+      color: '#57534e',
+      wordBreak: 'break-word',
+    });
+
+    const paintFromHere = () => {
+      fromHere.dataset.active = fromId ? 'true' : 'false';
+      fromHere.textContent = fromId ? '✓ Vanaf dit gesprek' : '⌖ Vanaf dit gesprek';
+      fromHere.title = fromId
+        ? 'Start bij het gesprek dat nu open is — klik om te wissen'
+        : 'Open het gesprek waar de rit moet beginnen en klik hier';
+      fromHere.style.background = fromId ? '#dcfce7' : '#fff';
+      fromHere.style.borderColor = fromId ? 'rgba(22,101,52,0.35)' : 'rgba(0,0,0,0.15)';
+      // Wélk gesprek het is, niet alleen dát er iets gekozen is: een
+      // blijvende keuze uit een vorige sessie mag niet ongemerkt meelopen.
+      const label = fromId ? currentLabel() : '';
+      fromHereNote.textContent = label ? label.slice(0, 34) : '';
+      fromHereNote.style.display = label ? 'block' : 'none';
+    };
+
+    /** Titel van het geopende gesprek; de id alleen zegt de gebruiker niets. */
+    const currentLabel = () => {
+      const raw = options.currentLabel ? options.currentLabel() : document.title;
+      return String(raw || '')
+        .replace(/\s+[-–—|]\s+(Gemini|ChatGPT|Claude).*$/i, '')
+        .trim();
+    };
+
     const start = document.createElement('button');
     start.textContent = '⇊ Start';
     Object.assign(start.style, {
@@ -673,6 +743,8 @@
       archive.value = bulkFilter.archive || 'skip';
       lastN.value = bulkFilter.lastN ? String(bulkFilter.lastN) : '';
       fromN.value = bulkFilter.fromN > 1 ? String(bulkFilter.fromN) : '';
+      fromId = bulkFilter.fromId || '';
+      paintFromHere();
     };
 
     const launch = (filter) => {
@@ -686,17 +758,37 @@
         since: supportsDate ? since.value || '' : '',
         archive: supportsArchive ? archive.value : 'all',
         lastN: Number(lastN.value) || 0,
-        fromN: Number(fromN.value) || 0,
+        // Een gesprek en een nummer samen zegt niets: het gesprek wint.
+        fromN: fromId ? 0 : Number(fromN.value) || 0,
+        fromId,
       });
     });
 
+    fromHere.addEventListener('click', () => {
+      if (fromId) {
+        fromId = '';
+        paintFromHere();
+        return;
+      }
+      const id = options.currentId ? options.currentId() : null;
+      if (!id) {
+        fromHere.textContent = 'geen gesprek open';
+        setTimeout(paintFromHere, 1600);
+        return;
+      }
+      fromId = String(id);
+      paintFromHere();
+    });
+
     everything.addEventListener('click', () => {
-      launch({ since: '', archive: 'all', lastN: 0, fromN: 0 });
+      launch({ since: '', archive: 'all', lastN: 0, fromN: 0, fromId: '' });
     });
 
     if (supportsDate) panel.appendChild(filterField('Vanaf datum', since));
     if (supportsArchive) panel.appendChild(filterField('Archief', archive));
     panel.appendChild(filterField('Vanaf gesprek #', fromN));
+    panel.appendChild(fromHere);
+    panel.appendChild(fromHereNote);
     panel.appendChild(filterField('Laatste N gesprekken', lastN));
     panel.appendChild(row);
     row.append(start, everything);
