@@ -29,6 +29,19 @@ interface ChatViewerProps {
   onRetrySourceFile?: (chat: ChatEntry) => void;
 }
 
+/**
+ * Handmatige tags volgen de vorm die Gemini al produceert: kleine letters en
+ * geen spaties. Een dubbele punt blijft staan, zodat Gaia-conventies als
+ * `gaia:hypothesis` gewoon kunnen.
+ */
+const normalizeTag = (raw: string) =>
+  String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s*:\s*/g, ':')
+    .replace(/[\s,]+/g, '-')
+    .replace(/^[-:]+|[-:]+$/g, '');
+
 const ImageGallery: React.FC<{ assets: string[] }> = ({ assets }) => (
   <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
     {assets.map((asset, idx) => (
@@ -271,6 +284,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   const [editTitle, setEditTitle] = useState(chat.title);
   const [editSummary, setEditSummary] = useState(chat.summary);
   const [editTags, setEditTags] = useState<string[]>(chat.tags);
+  const [newTag, setNewTag] = useState('');
   const [editContent, setEditContent] = useState(chat.content);
   const [isDetecting, setIsDetecting] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -288,6 +302,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
     setEditTitle(chat.title);
     setEditSummary(chat.summary);
     setEditTags(chat.tags);
+    setNewTag('');
     setEditContent(chat.content);
     setIsEditing(false);
     setShowArchiveConfirm(false);
@@ -320,6 +335,37 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   const galleryAssets = (chat.assets || []).filter((asset) => !inlineLocalUrls.has(asset));
 
   const handleSave = () => { onUpdate({ ...chat, title: editTitle, summary: editSummary, tags: editTags, content: editContent }); setIsEditing(false); };
+
+  const handleDiscard = () => {
+    setEditTitle(chat.title);
+    setEditSummary(chat.summary);
+    setEditTags(chat.tags);
+    setEditContent(chat.content);
+    setNewTag('');
+    setIsEditing(false);
+  };
+
+  const addTag = (raw: string) => {
+    const tag = normalizeTag(raw);
+    if (!tag) return;
+    setEditTags(prev => (prev.includes(tag) ? prev : [...prev, tag]));
+    setNewTag('');
+  };
+
+  const removeTag = (tag: string) => setEditTags(prev => prev.filter(t => t !== tag));
+
+  // Suggesties uit de rest van het archief, zodat je een bestaande tag hergebruikt
+  // in plaats van er stilletjes een bijna-dubbel van maakt.
+  const tagSuggestions = useMemo(() => {
+    const tags = new Set<string>();
+    allChats.forEach(c => (c.tags || []).forEach(t => { if (!editTags.includes(t)) tags.add(t); }));
+    return Array.from(tags).sort();
+  }, [allChats, editTags]);
+
+  const tagChipClass = (tag: string) =>
+    `px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${
+      activeRelatedTags.includes(tag) ? 'bg-terracotta border-terracotta text-white shadow-sm' : isNote ? 'bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/30 dark:border-amber-800/60 dark:text-amber-300 hover:border-terracotta/50' : 'bg-sage-green/10 border-sage-green/20 text-sage-green dark:border-sage-green/40 dark:text-[#B2C9A1] hover:border-terracotta/50'
+    }`;
   
   const handleAddAsset = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -461,12 +507,38 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                   </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 px-2">
+              <div className="flex flex-wrap items-center gap-2 px-2">
                   {(isEditing ? editTags : chat.tags).map(tag => (
-                      <button key={tag} onClick={() => !isEditing && onTagClick(tag)} className={`px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${activeRelatedTags.includes(tag) ? 'bg-terracotta border-terracotta text-white shadow-sm' : isNote ? 'bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/30 dark:border-amber-800/60 dark:text-amber-300 hover:border-terracotta/50' : 'bg-sage-green/10 border-sage-green/20 text-sage-green dark:border-sage-green/40 dark:text-[#B2C9A1] hover:border-terracotta/50'}`}>
-                          <TagIcon className="w-3 h-3" /> {tag}
-                      </button>
+                      isEditing ? (
+                        <span key={tag} className={`${tagChipClass(tag)} pr-1.5`}>
+                            <TagIcon className="w-3 h-3" /> {tag}
+                            <button onClick={() => removeTag(tag)} title={`Remove tag ${tag}`} aria-label={`Remove tag ${tag}`} className="ml-0.5 -mr-1 rounded-md p-0.5 opacity-60 hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+                                <XIcon className="w-3 h-3" />
+                            </button>
+                        </span>
+                      ) : (
+                        <button key={tag} onClick={() => onTagClick(tag)} className={tagChipClass(tag)}>
+                            <TagIcon className="w-3 h-3" /> {tag}
+                        </button>
+                      )
                   ))}
+                  {isEditing && (
+                      <div className="flex items-stretch gap-1">
+                          <input
+                            value={newTag}
+                            onChange={e => setNewTag(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(newTag); } }}
+                            list="chronicle-tag-suggestions"
+                            placeholder="New tag…"
+                            aria-label="New tag"
+                            className="w-36 px-3 py-1.5 rounded-xl border-2 border-dashed border-sage-green/40 bg-transparent text-[10px] font-black uppercase tracking-widest text-earth-dark dark:text-white placeholder:text-moss-brown/60 outline-none focus:border-sage-green"
+                          />
+                          <datalist id="chronicle-tag-suggestions">
+                            {tagSuggestions.map(t => <option key={t} value={t} />)}
+                          </datalist>
+                          <button onClick={() => addTag(newTag)} disabled={!newTag.trim()} className="px-2.5 py-1.5 rounded-xl bg-sage-green text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">Add</button>
+                      </div>
+                  )}
               </div>
 
               <ChroniclePulse
@@ -515,7 +587,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
               {isEditing && (
                   <div className="sticky bottom-8 flex gap-3 justify-end animate-in slide-in-from-bottom-4 z-20">
-                      <button onClick={() => setIsEditing(false)} className="px-6 py-3 rounded-2xl bg-white text-stone-500 font-black text-[10px] uppercase border border-sandstone/30 shadow-lg">Discard</button>
+                      <button onClick={handleDiscard} className="px-6 py-3 rounded-2xl bg-white text-stone-500 font-black text-[10px] uppercase border border-sandstone/30 shadow-lg">Discard</button>
                       <button onClick={handleSave} className={`px-4 py-1.5 rounded-2xl text-white font-black text-[10px] uppercase shadow-sm ${isNote ? 'bg-amber-600' : 'bg-sage-green'}`}>Commit Synthesis</button>
                   </div>
               )}

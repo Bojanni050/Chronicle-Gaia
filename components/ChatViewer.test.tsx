@@ -85,4 +85,58 @@ describe('ChatViewer Component', () => {
     fireEvent.change(titleInput, { target: { value: 'New Title' } });
     expect(titleInput).toHaveValue('New Title');
   });
+
+  it('adds a manual tag in edit mode and saves it', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+    fireEvent.click(screen.getByTitle('Edit'));
+
+    fireEvent.change(screen.getByLabelText('New tag'), { target: { value: '  Gaia: Hypothesis ' } });
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.click(screen.getByText('Commit Synthesis'));
+
+    const updated = defaultProps.onUpdate.mock.calls.at(-1)?.[0];
+    expect(updated.tags).toEqual(['physics', 'demo', 'gaia:hypothesis']);
+  });
+
+  it('does not add an empty or duplicate tag', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+    fireEvent.click(screen.getByTitle('Edit'));
+
+    fireEvent.change(screen.getByLabelText('New tag'), { target: { value: '   ' } });
+    expect(screen.getByText('Add')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('New tag'), { target: { value: 'Physics' } });
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.click(screen.getByText('Commit Synthesis'));
+
+    const updated = defaultProps.onUpdate.mock.calls.at(-1)?.[0];
+    expect(updated.tags).toEqual(['physics', 'demo']);
+  });
+
+  it('removes a tag in edit mode', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+    fireEvent.click(screen.getByTitle('Edit'));
+
+    fireEvent.click(screen.getByLabelText('Remove tag physics'));
+    fireEvent.click(screen.getByText('Commit Synthesis'));
+
+    const updated = defaultProps.onUpdate.mock.calls.at(-1)?.[0];
+    expect(updated.tags).toEqual(['demo']);
+  });
+
+  it('restores the original tags when discarding', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+    fireEvent.click(screen.getByTitle('Edit'));
+
+    fireEvent.click(screen.getByLabelText('Remove tag physics'));
+    fireEvent.click(screen.getByText('Discard'));
+    fireEvent.click(screen.getByTitle('Edit'));
+
+    expect(screen.getByText('physics')).toBeInTheDocument();
+    expect(defaultProps.onUpdate).not.toHaveBeenCalled();
+  });
 });
