@@ -285,6 +285,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
   const [editSummary, setEditSummary] = useState(chat.summary);
   const [editTags, setEditTags] = useState<string[]>(chat.tags);
   const [newTag, setNewTag] = useState('');
+  const [isQuickTagging, setIsQuickTagging] = useState(false);
   const [editContent, setEditContent] = useState(chat.content);
   const [isDetecting, setIsDetecting] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -303,6 +304,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
     setEditSummary(chat.summary);
     setEditTags(chat.tags);
     setNewTag('');
+    setIsQuickTagging(false);
     setEditContent(chat.content);
     setIsEditing(false);
     setShowArchiveConfirm(false);
@@ -342,6 +344,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
     setEditTags(chat.tags);
     setEditContent(chat.content);
     setNewTag('');
+    setIsQuickTagging(false);
     setIsEditing(false);
   };
 
@@ -354,13 +357,25 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
 
   const removeTag = (tag: string) => setEditTags(prev => prev.filter(t => t !== tag));
 
+  /** Quick-add buiten de bewerkmodus: meteen opslaan, geen Commit nodig. */
+  const addTagDirect = (raw: string) => {
+    const tag = normalizeTag(raw);
+    setIsQuickTagging(false);
+    setNewTag('');
+    if (!tag || chat.tags.includes(tag)) return;
+    onUpdate({ ...chat, tags: [...chat.tags, tag] });
+  };
+
+  /** De lijst die nu op het scherm staat: concept in bewerkmodus, anders de opgeslagen tags. */
+  const visibleTags = isEditing ? editTags : chat.tags;
+
   // Suggesties uit de rest van het archief, zodat je een bestaande tag hergebruikt
   // in plaats van er stilletjes een bijna-dubbel van maakt.
   const tagSuggestions = useMemo(() => {
     const tags = new Set<string>();
-    allChats.forEach(c => (c.tags || []).forEach(t => { if (!editTags.includes(t)) tags.add(t); }));
+    allChats.forEach(c => (c.tags || []).forEach(t => { if (!visibleTags.includes(t)) tags.add(t); }));
     return Array.from(tags).sort();
-  }, [allChats, editTags]);
+  }, [allChats, visibleTags]);
 
   const tagChipClass = (tag: string) =>
     `px-3 py-1.5 rounded-xl border-2 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 transition-colors ${
@@ -435,7 +450,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                          <input type="file" ref={assetInputRef} className="hidden" accept="image/*" onChange={handleAddAsset} />
                        </button>
                      )}
-                     <button onClick={() => setIsEditing(!isEditing)} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
+                     <button onClick={() => { setIsEditing(!isEditing); setNewTag(''); setIsQuickTagging(false); }} title="Edit" className="p-2 text-moss-brown hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20"><EditIcon /></button>
                      {chat.archived ? (
                        <button onClick={() => onRestore?.(chat.id)} title="Restore from archive" className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-sage-green hover:text-earth-dark dark:hover:text-white transition-colors bg-white dark:bg-stone-800 rounded-lg border border-sandstone/20">Restore</button>
                      ) : (
@@ -508,7 +523,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 px-2">
-                  {(isEditing ? editTags : chat.tags).map(tag => (
+                  {visibleTags.map(tag => (
                       isEditing ? (
                         <span key={tag} className={`${tagChipClass(tag)} pr-1.5`}>
                             <TagIcon className="w-3 h-3" /> {tag}
@@ -522,23 +537,36 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                         </button>
                       )
                   ))}
-                  {isEditing && (
+                  {isEditing || isQuickTagging ? (
                       <div className="flex items-stretch gap-1">
                           <input
+                            autoFocus={isQuickTagging}
                             value={newTag}
                             onChange={e => setNewTag(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(newTag); } }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); (isEditing ? addTag : addTagDirect)(newTag); }
+                              if (e.key === 'Escape') { setNewTag(''); setIsQuickTagging(false); }
+                            }}
                             list="chronicle-tag-suggestions"
                             placeholder="New tag…"
                             aria-label="New tag"
                             className="w-36 px-3 py-1.5 rounded-xl border-2 border-dashed border-sage-green/40 bg-transparent text-[10px] font-black uppercase tracking-widest text-earth-dark dark:text-white placeholder:text-moss-brown/60 outline-none focus:border-sage-green"
                           />
-                          <datalist id="chronicle-tag-suggestions">
-                            {tagSuggestions.map(t => <option key={t} value={t} />)}
-                          </datalist>
-                          <button onClick={() => addTag(newTag)} disabled={!newTag.trim()} className="px-2.5 py-1.5 rounded-xl bg-sage-green text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">Add</button>
+                          <button onClick={() => (isEditing ? addTag : addTagDirect)(newTag)} disabled={!newTag.trim()} className="px-2.5 py-1.5 rounded-xl bg-sage-green text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">Add</button>
+                          {isQuickTagging && (
+                            <button onClick={() => { setNewTag(''); setIsQuickTagging(false); }} title="Cancel" aria-label="Cancel adding a tag" className="px-2 text-moss-brown hover:text-earth-dark dark:hover:text-white">
+                                <XIcon className="w-3 h-3" />
+                            </button>
+                          )}
                       </div>
+                  ) : (
+                      <button onClick={() => { setNewTag(''); setIsQuickTagging(true); }} title="Add a tag" aria-label="Add a tag" className="px-3 py-1.5 rounded-xl border-2 border-dashed border-sage-green/40 text-sage-green/70 dark:text-[#B2C9A1]/70 text-[10px] uppercase font-black tracking-widest flex items-center gap-1.5 hover:border-sage-green hover:text-sage-green transition-colors">
+                          <PlusIcon className="w-3 h-3" /> Tag
+                      </button>
                   )}
+                  <datalist id="chronicle-tag-suggestions">
+                      {tagSuggestions.map(t => <option key={t} value={t} />)}
+                  </datalist>
               </div>
 
               <ChroniclePulse

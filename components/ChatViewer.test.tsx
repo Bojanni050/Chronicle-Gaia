@@ -139,4 +139,29 @@ describe('ChatViewer Component', () => {
     expect(screen.getByText('physics')).toBeInTheDocument();
     expect(defaultProps.onUpdate).not.toHaveBeenCalled();
   });
+
+  it('adds a tag straight from the object view without edit mode', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a tag' }));
+    fireEvent.change(screen.getByLabelText('New tag'), { target: { value: 'Archive: Inbox' } });
+    fireEvent.click(screen.getByText('Add'));
+
+    expect(defaultProps.onUpdate).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onUpdate.mock.calls[0][0].tags).toEqual(['physics', 'demo', 'archive:inbox']);
+    expect(screen.queryByLabelText('New tag')).not.toBeInTheDocument();
+  });
+
+  it('closes the quick-add field on Escape without saving', () => {
+    defaultProps.onUpdate.mockClear();
+    render(<ChatViewer {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a tag' }));
+    fireEvent.change(screen.getByLabelText('New tag'), { target: { value: 'x' } });
+    fireEvent.keyDown(screen.getByLabelText('New tag'), { key: 'Escape' });
+
+    expect(screen.queryByLabelText('New tag')).not.toBeInTheDocument();
+    expect(defaultProps.onUpdate).not.toHaveBeenCalled();
+  });
 });
