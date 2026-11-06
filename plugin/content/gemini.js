@@ -783,13 +783,6 @@
    * uit de virtualistie-scroll komen; hier gaat het alleen om de
    * stale-body-guard (het SPA-vraagstuk: de URL is al het nieuwe gesprek, de
    * DOM toont nog even het oude).
-   */
-  /**
-   * Wacht tot de doelconversatie zichtbaar is en de zichtbare beurt-staart
-   * stabiel is. De eigennaamse beurten moeten dáárna via collectRendered()
-   * uit de virtualistie-scroll komen; hier gaat het alleen om de
-   * stale-body-guard (het SPA-vraagstuk: de URL is al het nieuwe gesprek, de
-   * DOM toont nog even het oude).
    *
    * Geeft een uitkomst terug in plaats van alleen waar/onwaar, omdat een
    * diep-onderzoek-gesprek nooit twee gelijke beurt-signaturen oplevert: het
@@ -803,8 +796,12 @@
     let stableHits = 0;
     while (Date.now() < deadline) {
       await sleep(600);
-      if (conversationIdFromUrl() !== targetId) continue;
+      // Het paneel eerst, vóór de URL-controle. Een onderzoek opent soms een
+      // eigen weergave waarin de URL (nog) niet het aangeklikte gesprek is;
+      // hing de check achter die poort, dan zag de bulk het paneel nooit en
+      // wachtte hij twee keer 20 s voor niets.
       if (isDeepResearch()) return 'deep-research';
+      if (conversationIdFromUrl() !== targetId) continue;
       const turns = turnsFromDom();
       if (!turns.length) continue;
       const sig =
@@ -817,8 +814,8 @@
         lastSig = sig;
       }
     }
-    if (conversationIdFromUrl() !== targetId) return 'timeout';
     if (isDeepResearch()) return 'deep-research';
+    if (conversationIdFromUrl() !== targetId) return 'timeout';
     return turnsFromDom().length > 0 ? 'ok' : 'timeout';
   }
 
@@ -829,18 +826,67 @@
   const BULK_MAX_MS = 30000;
 
   /**
-   * Gemini zet een diep-onderzoek-gesprek in een eigen paneel-element
-   * (`deep-research-immersive-panel`, hetzelfde anker dat export-tools
-   * gebruiken). Dat element bestaat niet in een gewoon gesprek en blijft ook
-   * staan wanneer je een afgerond onderzoek later heropent, dus het is een
-   * betrouwbaarder signaal dan de titel of een icoontje in de zijbalk.
-   *
-   * De check gebeurt tijdens `waitForConversation()`: dat wacht op twee gelijke
-   * beurten-signaturen, dus het paneel van het vórige gesprek is dan al uit de
-   * DOM. Vóór de reveal-pass, want juist die pass loopt op zo'n artifact vast.
+   * Sporen van een diep-onderzoek-weergave. Eén exacte tag bleek te smal: een
+   * onderzoek komt in drie gedaanten langs (vers onderzoek, heropend rapport,
+   * rapport als antwoord binnen een gewoon gesprek) en Google hernoemt die
+   * internals met enige regelmaat. Vandaar een korte lijst met brede vangers.
+   * `browse-chip-list` is de bronnenlijst onder een rapport — die bestaat in
+   * een gewoon antwoord niet.
    */
+  const DEEP_RESEARCH_SELECTORS = [
+    'deep-research-immersive-panel',
+    '[data-test-id*="deep-research" i]',
+    '[class*="deep-research" i]',
+    'browse-chip-list',
+  ];
+
+  /**
+   * Eerder herkende onderzoeken, op gesprek-id. De zijbalk klikt zo'n gesprek
+   * anders elke run opnieuw aan en dan betaal je telkens de wachttijd: de
+   * detectie hierboven kost pas iets zodra het gesprek al geopend is.
+   */
+  const deepResearchSeen = new Set();
+
   function isDeepResearch() {
-    return Boolean(document.querySelector('deep-research-immersive-panel'));
+    for (const sel of DEEP_RESEARCH_SELECTORS) {
+      if (document.querySelector(sel)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Bij een gesprek dat niet laadt is de vraag altijd: welke DOM staat er dan
+   * wél? Zonder dit antwoord is elke selector een gok. Alleen op het moment
+   * van falen, dus de kosten vallen weg tegen de 20 s die al verloren ging.
+   */
+  function researchProbe() {
+    const view = [];
+    for (const node of document.querySelectorAll(
+      '[data-test-id*="research" i], [class*="research" i], [data-test-id*="deep" i]'
+    )) {
+      if (view.length >= 6) break;
+      const tag = node.tagName.toLowerCase();
+      const testId = node.getAttribute('data-test-id') || '';
+      const cls = (node.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+      view.push(`${tag}${testId ? `[${testId}]` : ''}${cls ? `.${cls}` : ''}`);
+    }
+    const custom = new Set();
+    for (const node of document.querySelectorAll('*')) {
+      if (custom.size >= 12) break;
+      const tag = node.tagName.toLowerCase();
+      if (tag.includes('-')) custom.add(tag);
+    }
+    return {
+      research: view,
+      custom: Array.from(custom),
+      turns: document.querySelectorAll(SELECTORS.turnContainer).length,
+      sidebar: visibleSidebarLinks().length,
+    };
+  }
+
+  /** Het paneel is een immersieve laag: de zijbalk eronder is onbruikbaar. */
+  function deepResearchPanel() {
+    return document.querySelector('deep-research-immersive-panel');
   }
 
   /**
@@ -851,8 +897,7 @@
    * dat niet lukt terug naar het vorige gesprek.
    */
   async function leaveDeepResearch() {
-    const panel = () => document.querySelector('deep-research-immersive-panel');
-    if (!panel()) return true;
+    if (!isDeepResearch()) return true;
     const escape = new KeyboardEvent('keydown', {
       key: 'Escape',
       code: 'Escape',
@@ -863,18 +908,21 @@
     document.dispatchEvent(escape);
     window.dispatchEvent(escape);
     await sleep(500);
-    if (!panel()) return true;
-    const close = panel().querySelector(
-      'button[aria-label*="close" i], button[aria-label*="sluit" i], button[aria-label*="back" i], button[aria-label*="terug" i]'
-    );
+    if (!isDeepResearch()) return true;
+    const panel = deepResearchPanel();
+    const close = panel
+      ? panel.querySelector(
+          'button[aria-label*="close" i], button[aria-label*="sluit" i], button[aria-label*="back" i], button[aria-label*="terug" i]'
+        )
+      : null;
     if (close) {
       close.click();
       await sleep(500);
     }
-    if (!panel()) return true;
+    if (!isDeepResearch()) return true;
     history.back();
     await sleep(800);
-    return !panel();
+    return !isDeepResearch();
   }
 
   async function collectBulkConversations(filter, onProgress, onCollected) {
@@ -899,6 +947,12 @@
       const conv = list[i];
       const label = (conv.title || '(zonder titel)').slice(0, 40);
       const t0 = Date.now();
+      // Al eerder herkend onderzoek: niet nog eens 20 s op wachten.
+      if (deepResearchSeen.has(conv.id)) {
+        console.info('[Chronicle] gemini bulk: overgeslagen (diep onderzoek, eerder):', label);
+        skipped.push({ title: conv.title, reason: 'diep onderzoek' });
+        continue;
+      }
       onProgress && onProgress(i + 1, list.length, conv.title, 'laden');
       let navigated = await navigateTo(conv);
       let outcome = navigated ? await waitForConversation(conv.id) : 'no-anchor';
@@ -915,6 +969,7 @@
       // het volgende gesprek geen enkele anchor in de zijbalk.
       if (outcome === 'deep-research') {
         console.info('[Chronicle] gemini bulk: overgeslagen (diep onderzoek):', label);
+        deepResearchSeen.add(conv.id);
         skipped.push({ title: conv.title, reason: 'diep onderzoek' });
         if (!(await leaveDeepResearch())) {
           console.info('[Chronicle] gemini bulk: paneel niet te sluiten:', label, sidebarState());
@@ -934,6 +989,7 @@
       }
       if (outcome !== 'ok') {
         console.info('[Chronicle] gemini bulk: overgeslagen (niet geladen):', label);
+        console.info('[Chronicle] gemini bulk: DOM-probe', label, researchProbe());
         skipped.push({ title: conv.title, reason: 'niet geladen' });
         // Alleen een lege zijbalk is een reden om te stoppen. Een gesprek dat
         // niet laadt (zwaar artifact, inmiddels verwijderd) mag de run niet
@@ -961,6 +1017,7 @@
             '(' + rest.length + ' gesprekken niet geprobeerd)',
             sidebarState()
           );
+          console.info('[Chronicle] gemini bulk: DOM-probe bij stop', researchProbe());
           for (const item of rest) {
             skipped.push({ title: item.title, reason: 'niet geprobeerd (zijbalk weg)' });
           }
