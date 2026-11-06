@@ -434,7 +434,7 @@ export const ChatViewer: React.FC<ChatViewerProps> = ({
                              {isNote ? <PencilIcon className="w-6 h-6" /> : isWeb ? <LinkIcon className="w-6 h-6" /> : <MessageIcon className="w-6 h-6" />}
                          </div>
                          <div>
-                             <h1 className="text-4xl sm:text-5xl font-light text-earth-dark dark:text-white font-display tracking-[-0.04em] leading-tight">{chat.title}</h1>
+                             <h1 className="text-[2rem] font-medium leading-normal tracking-normal text-earth-dark dark:text-white font-display">{chat.title}</h1>
                             <div className="flex items-center gap-2 text-[10px] font-black text-moss-brown uppercase tracking-[0.2em] mt-1">
                                 <span>{isNote ? 'PERSONAL SYNTHESIS' : displaySource(chat.source, chat.capture?.url)}</span>
                                 <span>•</span>
